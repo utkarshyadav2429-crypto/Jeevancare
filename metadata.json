@@ -1,0 +1,6 @@
+{
+  "name": "Jevan Care",
+  "description": "AI-powered healthcare ecosystem featuring real-time GPS location matching, MedBuddy doorstep hospital companions, prescription OCR intelligence, AB-PMJAY government scheme matching, e-RaktKosh live blood networks, and encrypted Medical Vault.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

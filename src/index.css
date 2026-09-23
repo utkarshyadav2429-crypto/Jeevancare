@@ -1,0 +1,534 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@font-face {
+  font-family: "Askan Light";
+  src: url("https://db.onlinewebfonts.com/t/304a6edcec9f8858eeaafc2ac18243f4.eot");
+  src: url("https://db.onlinewebfonts.com/t/304a6edcec9f8858eeaafc2ac18243f4.eot?#iefix") format("embedded-opentype"),
+       url("https://db.onlinewebfonts.com/t/304a6edcec9f8858eeaafc2ac18243f4.woff2") format("woff2"),
+       url("https://db.onlinewebfonts.com/t/304a6edcec9f8858eeaafc2ac18243f4.woff") format("woff"),
+       url("https://db.onlinewebfonts.com/t/304a6edcec9f8858eeaafc2ac18243f4.ttf") format("truetype"),
+       url("https://db.onlinewebfonts.com/t/304a6edcec9f8858eeaafc2ac18243f4.svg#Askan Light") format("svg");
+  font-weight: 300;
+  font-style: normal;
+}
+
+@theme {
+  --font-askan: "Askan Light", serif;
+  --font-inter: "Inter", sans-serif;
+
+  --color-background: var(--bg-app);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-muted: var(--bg-surface-subtle);
+  --color-muted-foreground: var(--text-muted);
+  --color-border: var(--border-warm);
+}
+
+.font-askan {
+  font-family: 'Askan Light', serif;
+}
+
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+:root {
+  --bg-canvas: #FAF8F5;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #F3EFE6;
+  --border-subtle: #E8E2D7;
+  --text-primary: #142B20;
+  --text-secondary: #4A554D;
+  --text-muted: #6E7A71;
+  --color-accent: #1A5336;
+  --color-emergency: #A61C1C;
+
+  /* Backward compatible aliases mapped to semantic tokens */
+  --bg-app: var(--bg-canvas);
+  --bg-surface-subtle: var(--bg-surface-raised);
+  --bg-sage: var(--bg-surface-raised);
+  --bg-blush: #faeceb;
+  --border-warm: var(--border-subtle);
+  --border-sage: var(--border-subtle);
+  --color-primary: var(--color-accent);
+  --color-primary-hover: #143e29;
+}
+
+.dark {
+  --bg-canvas: #0E1712;
+  --bg-surface: #15221B;
+  --bg-surface-raised: #1D2D24;
+  --border-subtle: #25382D;
+  --text-primary: #F2EFE9;
+  --text-secondary: #BAC7BE;
+  --text-muted: #91A396;
+  --color-accent: #34D399;
+  --color-emergency: #F87171;
+
+  /* Backward compatible aliases mapped to semantic tokens */
+  --bg-app: var(--bg-canvas);
+  --bg-surface-subtle: var(--bg-surface-raised);
+  --bg-sage: var(--bg-surface-raised);
+  --bg-blush: #2d161a;
+  --border-warm: var(--border-subtle);
+  --border-sage: var(--border-subtle);
+  --color-primary: var(--color-accent);
+  --color-primary-hover: #2bc48b;
+}
+
+@layer base {
+  html {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    min-height: 100vh;
+    min-height: 100dvh;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+}
+
+.bg-warm-app {
+  background-color: var(--bg-app);
+}
+
+.bg-warm-surface {
+  background-color: var(--bg-surface);
+}
+
+.bg-warm-subtle {
+  background-color: var(--bg-surface-subtle);
+}
+
+.bg-forest-900 {
+  background-color: var(--color-primary);
+}
+
+.bg-forest-800 {
+  background-color: var(--color-primary-hover);
+}
+
+.bg-sage-100 {
+  background-color: var(--bg-sage);
+}
+
+.bg-sage-200 {
+  background-color: #dce6d5;
+}
+
+.bg-blush-100 {
+  background-color: var(--bg-blush);
+}
+
+.bg-blush-200 {
+  background-color: #f2dad8;
+}
+
+.text-forest-950 {
+  color: var(--text-primary);
+}
+
+.text-forest-900 {
+  color: var(--text-primary);
+}
+
+.text-forest-800 {
+  color: var(--color-primary-hover);
+}
+
+.text-sage-800 {
+  color: #2b503b;
+}
+
+.text-blush-900 {
+  color: #7d3a3e;
+}
+
+.text-taupe-700 {
+  color: var(--text-secondary);
+}
+
+.text-taupe-500 {
+  color: var(--text-muted);
+}
+
+.border-warm-200 {
+  border-color: var(--border-warm);
+}
+
+.border-sage-200 {
+  border-color: var(--border-sage);
+}
+
+.border-blush-200 {
+  border-color: #eed8d7;
+}
+
+.font-serif-editorial {
+  font-family: 'Newsreader', Georgia, serif;
+}
+
+/* Custom scrollbars and subtle borders for editorial clean aesthetic */
+@keyframes soundwave {
+  0%, 100% {
+    height: 4px;
+    opacity: 0.5;
+  }
+  50% {
+    height: 18px;
+    opacity: 1;
+  }
+}
+
+.animate-soundwave-1 {
+  animation: soundwave 1.2s ease-in-out infinite;
+}
+.animate-soundwave-2 {
+  animation: soundwave 0.8s ease-in-out infinite 0.2s;
+}
+.animate-soundwave-3 {
+  animation: soundwave 1.4s ease-in-out infinite 0.4s;
+}
+.animate-soundwave-4 {
+  animation: soundwave 0.9s ease-in-out infinite 0.1s;
+}
+.animate-soundwave-5 {
+  animation: soundwave 1.1s ease-in-out infinite 0.3s;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+/* Hide scrollbar utility for touch & horizontal scrolling navigation */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Focus rings for keyboard accessibility */
+:focus-visible {
+  outline: 2px solid #1a5336;
+  outline-offset: 2px;
+}
+.dark :focus-visible {
+  outline: 2px solid #34d399;
+  outline-offset: 2px;
+}
+
+/* Touch target helper class for mobile accessibility */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================================================================
+   Standardized Healthcare Design System Tokens
+   ========================================================================= */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.875rem;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: transform 180ms ease, background-color 180ms ease, opacity 180ms ease;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+.dark .btn-primary {
+  background-color: #a3d4b6;
+  color: #0f1a14;
+}
+.btn-primary:hover {
+  background-color: var(--color-primary-hover);
+}
+.dark .btn-primary:hover {
+  background-color: #bde6cb;
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.875rem;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-warm);
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.btn-secondary:hover {
+  background-color: var(--bg-surface-subtle);
+  border-color: var(--border-sage);
+}
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 40px;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: background-color 180ms ease, color 180ms ease;
+  cursor: pointer;
+}
+.btn-ghost:hover {
+  background-color: var(--bg-surface-subtle);
+  color: var(--text-primary);
+}
+
+.btn-destructive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.875rem;
+  background-color: #e11d48;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: transform 180ms ease, background-color 180ms ease;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.btn-destructive:hover {
+  background-color: #be123c;
+}
+.btn-destructive:active {
+  transform: scale(0.98);
+}
+
+/* Surface Cards */
+.surface-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-warm);
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+}
+
+.surface-subtle {
+  background-color: var(--bg-surface-subtle);
+  border: 1px solid var(--border-warm);
+  border-radius: 0.875rem;
+}
+
+/* Form Input Normalization */
+.form-input {
+  width: 100%;
+  height: 44px;
+  padding-left: 0.875rem;
+  padding-right: 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-warm);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(27, 59, 43, 0.15);
+}
+.dark .form-input:focus {
+  box-shadow: 0 0 0 2px rgba(163, 212, 182, 0.25);
+}
+
+/* Coordinated Entry Animation */
+@keyframes page-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: page-fade-up 220ms ease-out forwards;
+}
+
+/* Respect user prefers-reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =========================================================================
+   Prescription Scanner Camera Laser & Frame Overlay Animations
+   ========================================================================= */
+
+@keyframes laser-sweep {
+  0% {
+    top: 4%;
+    opacity: 0.85;
+  }
+  50% {
+    top: 94%;
+    opacity: 1;
+  }
+  100% {
+    top: 4%;
+    opacity: 0.85;
+  }
+}
+
+@keyframes laser-glow-wash {
+  0% {
+    transform: translateY(-80%);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translateY(80%);
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateY(-80%);
+    opacity: 0.15;
+  }
+}
+
+@keyframes corner-bracket-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 0.9));
+  }
+}
+
+@keyframes reticle-pulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(0.95);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+@keyframes scan-grid-flicker {
+  0%, 100% {
+    opacity: 0.08;
+  }
+  50% {
+    opacity: 0.18;
+  }
+}
+
+@keyframes laser-line-glow {
+  0%, 100% {
+    box-shadow: 0 0 12px #10b981, 0 0 24px #059669, 0 0 40px rgba(16, 185, 129, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 20px #34d399, 0 0 35px #10b981, 0 0 60px rgba(52, 211, 153, 0.9);
+  }
+}
+
+.animate-laser-sweep {
+  animation: laser-sweep 2.8s ease-in-out infinite;
+}
+
+.animate-laser-glow-wash {
+  animation: laser-glow-wash 2.8s ease-in-out infinite;
+}
+
+.animate-corner-pulse {
+  animation: corner-bracket-pulse 2s ease-in-out infinite;
+}
+
+.animate-reticle-pulse {
+  animation: reticle-pulse 2.2s ease-in-out infinite;
+}
+
+.animate-grid-flicker {
+  animation: scan-grid-flicker 3s ease-in-out infinite;
+}
+
+.animate-laser-glow {
+  animation: laser-line-glow 1.6s ease-in-out infinite alternate;
+}
+
+.scanner-grid-pattern {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(52, 211, 153, 0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(52, 211, 153, 0.18) 1px, transparent 1px);
+}
+
+

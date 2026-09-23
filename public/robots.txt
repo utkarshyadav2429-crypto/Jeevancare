@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /vault
+Disallow: /doctor
+Disallow: /patient
+Disallow: /api/
+
+Sitemap: https://jevancare.ai/sitemap.xml
