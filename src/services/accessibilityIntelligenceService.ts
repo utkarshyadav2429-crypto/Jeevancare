@@ -64,6 +64,11 @@ export const accessibilityIntelligenceService = {
     };
     localStorage.setItem(key, JSON.stringify(updated));
 
+    // Persist to Supabase economic_profiles table
+    import('./supabaseService').then(({ supabaseEconomicProfiles }) => {
+      supabaseEconomicProfiles.saveEconomicProfile(updated).catch(() => {});
+    }).catch(() => {});
+
     auditLogger.logAction(
       'ECONOMIC_PROFILE_UPDATE',
       `User updated voluntary health economic profile. Income bracket: ${profile.incomeBracket}, State: ${profile.state}`,

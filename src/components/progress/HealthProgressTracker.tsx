@@ -3,6 +3,7 @@ import {
   Activity,
   Plus,
   TrendingUp,
+  TrendingDown,
   HeartPulse,
   Sparkles,
   AlertCircle,
@@ -18,24 +19,36 @@ import {
   Smile,
   Mic,
   MicOff,
-  X
+  X,
+  Scale,
+  FileDown,
+  FileText,
+  ArrowUp,
+  ArrowDown,
+  Minus,
+  Eye
 } from 'lucide-react';
 import {
   ResponsiveContainer,
+  ComposedChart,
   LineChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
   Legend,
   CartesianGrid,
+  ReferenceLine,
   BarChart,
   Bar
 } from 'recharts';
+import jsPDF from 'jspdf';
 import { HealthMetricLog, HealthProgressAnalysisResult, UserProfile } from '../../types';
 import { auditLogger } from '../../services/AuditLogger';
 import { JevanCareLoader } from '../common/JevanCareLoader';
 import { useTheme } from '../../context/ThemeContext';
+import { BmiCalculatorModule } from './BmiCalculatorModule';
 
 interface HealthProgressTrackerProps {
   metrics?: HealthMetricLog[];
@@ -93,9 +106,16 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<HealthProgressAnalysisResult | null>(null);
 
-  // CSV Export State
+  // Export & Report State
   const [isExporting, setIsExporting] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+
+  // Chart View Mode State ('combined' | 'weight' | 'bp')
+  const [chartViewMode, setChartViewMode] = useState<'combined' | 'weight' | 'bp'>('combined');
+
+  // 7-Day Trend Indicator Icons Toggle on Chart Data Points
+  const [showTrendIndicators, setShowTrendIndicators] = useState<boolean>(true);
 
   // Speech Recognition / Voice Input State
   const [isListening, setIsListening] = useState(false);
@@ -286,18 +306,226 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
     if (safeMetrics.length === 0) return [];
 
     // Sort chronologically (oldest to newest for time-series charts)
-    const sorted = [...safeMetrics].sort((a, b) => new Date(a.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const sorted = [...safeMetrics].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
 
     const now = new Date();
+    const latestDate = new Date(sorted[sorted.length - 1].timestamp);
+    const referenceTime = Math.max(now.getTime(), latestDate.getTime());
+
     if (timeRange === 'week') {
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      return sorted.filter((m) => new Date(m.timestamp) >= sevenDaysAgo);
+      const sevenDaysAgo = new Date(referenceTime - 7 * 24 * 60 * 60 * 1000);
+      const filtered = sorted.filter((m) => new Date(m.timestamp) >= sevenDaysAgo);
+      return filtered.length > 0 ? filtered : sorted.slice(-7);
     } else if (timeRange === 'month') {
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      return sorted.filter((m) => new Date(m.timestamp) >= thirtyDaysAgo);
+      const thirtyDaysAgo = new Date(referenceTime - 30 * 24 * 60 * 60 * 1000);
+      const filtered = sorted.filter((m) => new Date(m.timestamp) >= thirtyDaysAgo);
+      return filtered.length > 0 ? filtered : sorted.slice(-30);
     }
     return sorted;
   }, [safeMetrics, timeRange]);
+
+  // Comprehensive summary statistics for Weight, BP, and Vitals
+  const metricsStats = useMemo(() => {
+    if (filteredMetrics.length === 0) return null;
+    const latest = filteredMetrics[filteredMetrics.length - 1];
+    const baseline = filteredMetrics[0];
+
+    const weights = filteredMetrics.map((m) => m.weight).filter((w): w is number => typeof w === 'number' && !isNaN(w));
+    const systolics = filteredMetrics.map((m) => m.systolicBp).filter((s): s is number => typeof s === 'number' && !isNaN(s));
+    const diastolics = filteredMetrics.map((m) => m.diastolicBp).filter((d): d is number => typeof d === 'number' && !isNaN(d));
+    const sugars = filteredMetrics.map((m) => m.bloodSugar).filter((s): s is number => typeof s === 'number' && !isNaN(s));
+    const sleeps = filteredMetrics.map((m) => m.sleepHours).filter((s): s is number => typeof s === 'number' && !isNaN(s));
+    const pains = filteredMetrics.map((m) => m.painLevel).filter((p): p is number => typeof p === 'number' && !isNaN(p));
+
+    const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+
+    const latestWeight = latest.weight ?? 70;
+    const baselineWeight = baseline.weight ?? 70;
+    const weightChange = Number((latestWeight - baselineWeight).toFixed(1));
+
+    const avgSys = Math.round(avg(systolics));
+    const avgDia = Math.round(avg(diastolics));
+    const avgWeight = Number(avg(weights).toFixed(1));
+    const minWeight = weights.length ? Math.min(...weights) : latestWeight;
+    const maxWeight = weights.length ? Math.max(...weights) : latestWeight;
+    const avgSugar = Math.round(avg(sugars));
+    const avgSleep = Number(avg(sleeps).toFixed(1));
+    const avgPain = Number(avg(pains).toFixed(1));
+
+    // Blood Pressure Clinical Category based on AHA guidelines
+    let bpCategory = 'Optimal / Normal';
+    let bpBadgeColor = 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800';
+    if (latest.systolicBp >= 140 || latest.diastolicBp >= 90) {
+      bpCategory = 'Stage 2 Hypertension';
+      bpBadgeColor = 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800';
+    } else if (latest.systolicBp >= 130 || latest.diastolicBp >= 80) {
+      bpCategory = 'Stage 1 Hypertension';
+      bpBadgeColor = 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800';
+    } else if (latest.systolicBp >= 120 && latest.diastolicBp < 80) {
+      bpCategory = 'Elevated Systolic';
+      bpBadgeColor = 'text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800';
+    }
+
+    return {
+      count: filteredMetrics.length,
+      latest,
+      baseline,
+      latestWeight,
+      baselineWeight,
+      weightChange,
+      avgWeight,
+      minWeight,
+      maxWeight,
+      avgSys,
+      avgDia,
+      bpCategory,
+      bpBadgeColor,
+      avgSugar,
+      avgSleep,
+      avgPain
+    };
+  }, [filteredMetrics]);
+
+  // 7-Day Movement Trend Calculation for Vitals Metrics
+  // Calculates trailing delta and evaluates clinical health valence (positive vs negative trend)
+  const get7DayTrend = useCallback((
+    logDate: string,
+    metricKey: string
+  ): {
+    delta: number;
+    direction: 'up' | 'down' | 'neutral';
+    isPositive: boolean;
+    isNegative: boolean;
+    isNeutral: boolean;
+    color: string;
+    badgeBg: string;
+    label: string;
+    unit: string;
+    summaryText: string;
+  } | null => {
+    const curLog = safeMetrics.find((m) => m.timestamp === logDate);
+    if (!curLog) return null;
+    const curVal = (curLog as any)[metricKey];
+    if (curVal === undefined || curVal === null || isNaN(Number(curVal))) return null;
+
+    const curTime = new Date(logDate).getTime();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const targetTime = curTime - sevenDaysMs;
+
+    // Search in chronological safeMetrics for prior reading nearest to 7 days ago
+    let bestPrior: HealthMetricLog | null = null;
+    let minDistance = Infinity;
+
+    for (const m of safeMetrics) {
+      if (m.timestamp === logDate) continue;
+      const mTime = new Date(m.timestamp).getTime();
+      if (mTime >= curTime) continue; // must be strictly in the past
+
+      const val = (m as any)[metricKey];
+      if (val === undefined || val === null || isNaN(Number(val))) continue;
+
+      const dist = Math.abs(mTime - targetTime);
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestPrior = m;
+      }
+    }
+
+    // If no reading in ~7-14 day window, fallback to the nearest preceding reading
+    if (!bestPrior) {
+      const earlierLogs = safeMetrics
+        .filter((m) => new Date(m.timestamp).getTime() < curTime && (m as any)[metricKey] != null && !isNaN(Number((m as any)[metricKey])))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      if (earlierLogs.length > 0) {
+        bestPrior = earlierLogs[0];
+      }
+    }
+
+    if (!bestPrior) return null;
+
+    const priorNum = Number((bestPrior as any)[metricKey]);
+    const curNum = Number(curVal);
+    const delta = Number((curNum - priorNum).toFixed(1));
+
+    // Sensitivities
+    const threshold = metricKey === 'weight' ? 0.2 : metricKey === 'sleepHours' ? 0.3 : 1;
+    const direction: 'up' | 'down' | 'neutral' =
+      delta > threshold ? 'up' : delta < -threshold ? 'down' : 'neutral';
+
+    let isPositive = false;
+    let isNegative = false;
+    const isNeutral = direction === 'neutral';
+
+    if (isNeutral) {
+      isPositive = true; // stable readings are favorable in vitals monitoring
+    } else if (metricKey === 'systolicBp' || metricKey === 'diastolicBp') {
+      // Blood Pressure: Downward movement toward normal is positive, upward increase is negative
+      if (direction === 'down') {
+        isPositive = true;
+      } else {
+        isNegative = true;
+      }
+    } else if (metricKey === 'weight') {
+      // Weight management: Downward control is positive, sudden gain is negative
+      if (direction === 'down') {
+        isPositive = true;
+      } else {
+        isNegative = true;
+      }
+    } else if (metricKey === 'bloodSugar') {
+      // Blood Sugar: Lower glycemic values toward normal range is positive
+      if (direction === 'down') {
+        isPositive = true;
+      } else {
+        isNegative = true;
+      }
+    } else if (metricKey === 'sleepHours') {
+      // Sleep: Increased restful sleep (towards 7-8h) is positive, drop is negative
+      if (direction === 'up') {
+        isPositive = true;
+      } else {
+        isNegative = true;
+      }
+    }
+
+    const unit =
+      metricKey === 'weight'
+        ? 'kg'
+        : metricKey === 'systolicBp' || metricKey === 'diastolicBp'
+        ? 'mmHg'
+        : metricKey === 'bloodSugar'
+        ? 'mg/dL'
+        : metricKey === 'sleepHours'
+        ? 'hrs'
+        : '';
+
+    const sign = delta > 0 ? `+${delta}` : `${delta}`;
+    const arrowSymbol = direction === 'up' ? '▲' : direction === 'down' ? '▼' : '—';
+    const label = `${arrowSymbol} ${sign} ${unit}`;
+    const summaryText = isNeutral
+      ? 'Stable (7d)'
+      : isPositive
+      ? `Positive Trend (${direction === 'down' ? 'Reduced' : 'Increased'} ${sign} ${unit} in 7d)`
+      : `Negative Trend (${direction === 'up' ? 'Increased' : 'Reduced'} ${sign} ${unit} in 7d)`;
+
+    const color = isNeutral ? '#94a3b8' : isPositive ? '#10b981' : '#f43f5e';
+    const badgeBg = isNeutral ? '#f1f5f9' : isPositive ? '#ecfdf5' : '#fff1f2';
+
+    return {
+      delta,
+      direction,
+      isPositive,
+      isNegative,
+      isNeutral,
+      color,
+      badgeBg,
+      label,
+      unit,
+      summaryText,
+    };
+  }, [safeMetrics]);
 
   // Handle Form Submit
   const handleLogVitals = useCallback((e: React.FormEvent) => {
@@ -430,24 +658,805 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
     }
   }, [filteredMetrics, currentProfile.id, timeRange]);
 
-  // Custom Recharts Tooltip Component
+  // Render High-DPI Visual Trends Chart onto off-screen canvas for PDF Report
+  const generateTrendChartImage = useCallback((data: HealthMetricLog[]): string => {
+    if (typeof document === 'undefined' || data.length === 0) return '';
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 460;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    // Crisp white background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Padding dimensions
+    const padLeft = 70;
+    const padRight = 75;
+    const padTop = 50;
+    const padBottom = 55;
+    const plotW = canvas.width - padLeft - padRight;
+    const plotH = canvas.height - padTop - padBottom;
+
+    // Outer subtle border
+    ctx.strokeStyle = '#e6dfd3';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+
+    // Header Title
+    ctx.fillStyle = '#1b3b2b';
+    ctx.font = 'bold 17px Helvetica, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('HEALTH METRICS TRAJECTORY (WEIGHT & BLOOD PRESSURE OVER TIME)', padLeft, 32);
+
+    // Legends
+    ctx.font = '11px Helvetica, Arial, sans-serif';
+
+    // Systolic BP Legend
+    ctx.fillStyle = '#8b263e';
+    ctx.beginPath();
+    ctx.arc(padLeft + 570, 27, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#333333';
+    ctx.fillText('Systolic BP (mmHg)', padLeft + 580, 31);
+
+    // Diastolic BP Legend
+    ctx.fillStyle = '#2b503b';
+    ctx.beginPath();
+    ctx.arc(padLeft + 715, 27, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#333333';
+    ctx.fillText('Diastolic BP (mmHg)', padLeft + 725, 31);
+
+    // Weight Legend
+    ctx.fillStyle = '#0284c7';
+    ctx.beginPath();
+    ctx.arc(padLeft + 865, 27, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#333333';
+    ctx.fillText('Body Weight (kg)', padLeft + 875, 31);
+
+    // BP Range: 60 - 160 mmHg
+    const bpMin = 60;
+    const bpMax = 160;
+
+    // Weight dynamic range
+    const weights = data.map((d) => d.weight || 70);
+    const minW = Math.floor(Math.min(...weights) - 1);
+    const maxW = Math.ceil(Math.max(...weights) + 1);
+    const weightSpan = Math.max(1, maxW - minW);
+
+    // Background threshold zone for Normal BP (80 to 120 mmHg)
+    const y120 = padTop + plotH - ((120 - bpMin) / (bpMax - bpMin)) * plotH;
+    const y80 = padTop + plotH - ((80 - bpMin) / (bpMax - bpMin)) * plotH;
+    ctx.fillStyle = 'rgba(163, 212, 182, 0.12)';
+    ctx.fillRect(padLeft, y120, plotW, y80 - y120);
+
+    // Horizontal Grid Lines & BP Axis Labels (Left Axis)
+    const bpTicks = [60, 80, 100, 120, 140, 160];
+    bpTicks.forEach((bp) => {
+      const y = padTop + plotH - ((bp - bpMin) / (bpMax - bpMin)) * plotH;
+
+      ctx.beginPath();
+      ctx.strokeStyle = bp === 120 ? '#fda4af' : bp === 80 ? '#86efac' : '#f0ece1';
+      ctx.lineWidth = bp === 120 || bp === 80 ? 1.5 : 1;
+      if (bp === 120 || bp === 80) {
+        ctx.setLineDash([4, 4]);
+      } else {
+        ctx.setLineDash([]);
+      }
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(padLeft + plotW, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Left axis label
+      ctx.fillStyle = bp === 120 ? '#be123c' : bp === 80 ? '#15803d' : '#737373';
+      ctx.font = '10px Helvetica, Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${bp} mmHg`, padLeft - 8, y + 3.5);
+    });
+
+    // Right Axis Labels for Weight (Right Axis)
+    for (let i = 0; i <= 4; i++) {
+      const wVal = minW + (weightSpan * i) / 4;
+      const y = padTop + plotH - (i / 4) * plotH;
+      ctx.fillStyle = '#0284c7';
+      ctx.font = '10px Helvetica, Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${wVal.toFixed(1)} kg`, padLeft + plotW + 8, y + 3.5);
+    }
+
+    // Compute coordinate points
+    const points = data.map((d, idx) => {
+      const x = padLeft + (data.length === 1 ? plotW / 2 : (idx / (data.length - 1)) * plotW);
+      const rawSys = d.systolicBp ?? 120;
+      const rawDia = d.diastolicBp ?? 80;
+      const rawW = d.weight ?? minW;
+
+      const ySys = padTop + plotH - ((Math.min(bpMax, Math.max(bpMin, rawSys)) - bpMin) / (bpMax - bpMin)) * plotH;
+      const yDia = padTop + plotH - ((Math.min(bpMax, Math.max(bpMin, rawDia)) - bpMin) / (bpMax - bpMin)) * plotH;
+      const yWeight = padTop + plotH - ((rawW - minW) / weightSpan) * plotH;
+
+      return { x, ySys, yDia, yWeight, data: d, rawSys, rawDia, rawW };
+    });
+
+    // Draw Systolic Line
+    ctx.strokeStyle = '#8b263e';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    points.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.ySys);
+      else ctx.lineTo(pt.x, pt.ySys);
+    });
+    ctx.stroke();
+
+    // Draw Diastolic Line
+    ctx.strokeStyle = '#2b503b';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    points.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.yDia);
+      else ctx.lineTo(pt.x, pt.yDia);
+    });
+    ctx.stroke();
+
+    // Draw Weight Line (Dashed)
+    ctx.strokeStyle = '#0284c7';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    points.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.yWeight);
+      else ctx.lineTo(pt.x, pt.yWeight);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw point markers and text annotations
+    points.forEach((pt) => {
+      // Systolic point & label
+      ctx.fillStyle = '#8b263e';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.ySys, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = 'bold 9.5px Helvetica, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${pt.rawSys}`, pt.x, pt.ySys - 7);
+
+      // Systolic 7d Trend Indicator Arrow
+      const sysTrend = get7DayTrend(pt.data.timestamp, 'systolicBp');
+      if (sysTrend && sysTrend.direction !== 'neutral') {
+        ctx.fillStyle = sysTrend.isPositive ? '#16a34a' : '#dc2626';
+        ctx.beginPath();
+        if (sysTrend.direction === 'up') {
+          ctx.moveTo(pt.x + 8, pt.ySys - 13);
+          ctx.lineTo(pt.x + 5, pt.ySys - 7);
+          ctx.lineTo(pt.x + 11, pt.ySys - 7);
+        } else {
+          ctx.moveTo(pt.x + 8, pt.ySys - 7);
+          ctx.lineTo(pt.x + 5, pt.ySys - 13);
+          ctx.lineTo(pt.x + 11, pt.ySys - 13);
+        }
+        ctx.fill();
+      }
+
+      // Diastolic point & label
+      ctx.fillStyle = '#2b503b';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.yDia, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillText(`${pt.rawDia}`, pt.x, pt.yDia + 14);
+
+      // Diastolic 7d Trend Indicator Arrow
+      const diaTrend = get7DayTrend(pt.data.timestamp, 'diastolicBp');
+      if (diaTrend && diaTrend.direction !== 'neutral') {
+        ctx.fillStyle = diaTrend.isPositive ? '#16a34a' : '#dc2626';
+        ctx.beginPath();
+        if (diaTrend.direction === 'up') {
+          ctx.moveTo(pt.x + 8, pt.yDia + 16);
+          ctx.lineTo(pt.x + 5, pt.yDia + 22);
+          ctx.lineTo(pt.x + 11, pt.yDia + 22);
+        } else {
+          ctx.moveTo(pt.x + 8, pt.yDia + 22);
+          ctx.lineTo(pt.x + 5, pt.yDia + 16);
+          ctx.lineTo(pt.x + 11, pt.yDia + 16);
+        }
+        ctx.fill();
+      }
+
+      // Weight point & label
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.yWeight, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0369a1';
+      ctx.font = 'bold 9px Helvetica, Arial, sans-serif';
+      ctx.fillText(`${pt.rawW}kg`, pt.x, pt.yWeight - 7);
+
+      // Weight 7d Trend Indicator Arrow
+      const wTrend = get7DayTrend(pt.data.timestamp, 'weight');
+      if (wTrend && wTrend.direction !== 'neutral') {
+        ctx.fillStyle = wTrend.isPositive ? '#16a34a' : '#dc2626';
+        ctx.beginPath();
+        if (wTrend.direction === 'up') {
+          ctx.moveTo(pt.x + 16, pt.yWeight - 12);
+          ctx.lineTo(pt.x + 13, pt.yWeight - 6);
+          ctx.lineTo(pt.x + 19, pt.yWeight - 6);
+        } else {
+          ctx.moveTo(pt.x + 16, pt.yWeight - 6);
+          ctx.lineTo(pt.x + 13, pt.yWeight - 12);
+          ctx.lineTo(pt.x + 19, pt.yWeight - 12);
+        }
+        ctx.fill();
+      }
+
+      // Bottom date label
+      ctx.fillStyle = '#525252';
+      ctx.font = '9.5px Helvetica, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      const parts = pt.data.timestamp.split('-');
+      const formattedDate = parts.length === 3 ? `${parts[1]}/${parts[2]}` : pt.data.timestamp;
+      ctx.fillText(formattedDate, pt.x, padTop + plotH + 18);
+    });
+
+    return canvas.toDataURL('image/png');
+  }, [get7DayTrend]);
+
+  // Secure Comprehensive PDF Report Generation with jsPDF
+  const handleDownloadReportPdf = useCallback(async () => {
+    if (filteredMetrics.length === 0) {
+      setExportNotice('No vitals data available to generate a PDF report.');
+      setTimeout(() => setExportNotice(null), 3000);
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4',
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const contentWidth = pageWidth - margin * 2;
+
+      const patientName = currentProfile.name || 'Aarav Sharma';
+      const abhaNumber = currentProfile.abhaNumber || '91-3842-9102-4821';
+      const generatedDate = new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      // Generate the visual trend chart image from canvas
+      const chartImg = generateTrendChartImage(filteredMetrics);
+
+      // Header and Footer generator
+      const addHeaderAndFooter = (pageNumber: number, totalPages: number) => {
+        // Top Header Banner
+        doc.setFillColor(27, 59, 43); // #1b3b2b Forest Green
+        doc.rect(0, 0, pageWidth, 52, 'F');
+
+        doc.setTextColor(250, 248, 245);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.text('JEVAN CARE', margin, 32);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(252, 211, 77); // Amber-300
+        doc.text('HEALTH PROGRESS & CLINICAL VITALS REPORT', margin + 115, 32);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(230, 240, 235);
+        doc.text(`ABHA: ${abhaNumber}`, pageWidth - margin, 24, { align: 'right' });
+        doc.text(`CONFIDENTIAL MEDICAL RECORD`, pageWidth - margin, 36, { align: 'right' });
+
+        // Bottom Footer Bar
+        doc.setDrawColor(230, 223, 211);
+        doc.setLineWidth(0.75);
+        doc.line(margin, pageHeight - 35, pageWidth - margin, pageHeight - 35);
+
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(7.5);
+        doc.setTextColor(92, 86, 71);
+        doc.text(
+          'Jevan Care Ecosystem • Encrypted Health Progress Analysis • ISO 27001 Certified Clinical Tracking',
+          margin,
+          pageHeight - 22
+        );
+
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Page ${pageNumber} of ${totalPages}`, pageWidth - margin, pageHeight - 22, {
+          align: 'right',
+        });
+      };
+
+      let currentY = 66;
+
+      // Patient Demographics & Report Scope Box
+      doc.setFillColor(246, 242, 233);
+      doc.setDrawColor(230, 223, 211);
+      doc.roundedRect(margin, currentY, contentWidth, 68, 5, 5, 'FD');
+
+      doc.setTextColor(27, 59, 43);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.text('PATIENT PROFILE & REPORT PARAMETERS', margin + 12, currentY + 18);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(92, 86, 71);
+
+      doc.text(`Patient Name: ${patientName}`, margin + 12, currentY + 34);
+      doc.text(`ABHA Health ID: ${abhaNumber}`, margin + 12, currentY + 48);
+      doc.text(`Blood Group: ${currentProfile.bloodGroup || 'O+'}`, margin + 12, currentY + 60);
+
+      const timeRangeLabel = timeRange === 'week' ? 'Last 7 Days (Week)' : timeRange === 'month' ? 'Last 30 Days (Month)' : 'All Recorded Logs';
+      doc.text(`Report Window: ${timeRangeLabel}`, margin + 260, currentY + 34);
+      doc.text(`Logs Analyzed: ${filteredMetrics.length} chronological entries`, margin + 260, currentY + 48);
+      doc.text(`Generated At: ${generatedDate}`, margin + 260, currentY + 60);
+
+      currentY += 78;
+
+      // Executive Health Metrics Summary Cards (3 horizontal cards)
+      const cardWidth = (contentWidth - 16) / 3;
+      const cardHeight = 70;
+
+      // Card 1: Weight Dynamics
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(230, 223, 211);
+      doc.roundedRect(margin, currentY, cardWidth, cardHeight, 4, 4, 'FD');
+      doc.setFillColor(2, 132, 199); // Ocean Blue stripe
+      doc.rect(margin, currentY, 3, cardHeight, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(2, 132, 199);
+      doc.text('WEIGHT DYNAMICS', margin + 10, currentY + 16);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(27, 59, 43);
+      doc.text(`${metricsStats?.latestWeight ?? 70} kg`, margin + 10, currentY + 34);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(92, 86, 71);
+      const deltaSign = (metricsStats?.weightChange ?? 0) > 0 ? '+' : '';
+      doc.text(`Change: ${deltaSign}${metricsStats?.weightChange ?? 0} kg from baseline`, margin + 10, currentY + 48);
+      doc.text(`Range: ${metricsStats?.minWeight ?? 0} - ${metricsStats?.maxWeight ?? 0} kg (Avg: ${metricsStats?.avgWeight ?? 0})`, margin + 10, currentY + 60);
+
+      // Card 2: Blood Pressure Profile
+      const card2X = margin + cardWidth + 8;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(230, 223, 211);
+      doc.roundedRect(card2X, currentY, cardWidth, cardHeight, 4, 4, 'FD');
+      doc.setFillColor(139, 38, 62); // Crimson stripe
+      doc.rect(card2X, currentY, 3, cardHeight, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(139, 38, 62);
+      doc.text('BLOOD PRESSURE', card2X + 10, currentY + 16);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(27, 59, 43);
+      const latestBpStr = `${metricsStats?.latest.systolicBp ?? 120}/${metricsStats?.latest.diastolicBp ?? 80} mmHg`;
+      doc.text(latestBpStr, card2X + 10, currentY + 34);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(92, 86, 71);
+      doc.text(`Status: ${metricsStats?.bpCategory ?? 'Normal'}`, card2X + 10, currentY + 48);
+      doc.text(`Period Mean: ${metricsStats?.avgSys ?? 120}/${metricsStats?.avgDia ?? 80} mmHg`, card2X + 10, currentY + 60);
+
+      // Card 3: Lifestyle & Glycemic
+      const card3X = card2X + cardWidth + 8;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(230, 223, 211);
+      doc.roundedRect(card3X, currentY, cardWidth, cardHeight, 4, 4, 'FD');
+      doc.setFillColor(13, 148, 136); // Teal stripe
+      doc.rect(card3X, currentY, 3, cardHeight, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(13, 148, 136);
+      doc.text('GLYCEMIC & REST', card3X + 10, currentY + 16);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(27, 59, 43);
+      doc.text(`${metricsStats?.avgSugar ?? 100} mg/dL`, card3X + 10, currentY + 34);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(92, 86, 71);
+      doc.text(`Average Blood Sugar (Fasting)`, card3X + 10, currentY + 48);
+      doc.text(`Mean Sleep: ${metricsStats?.avgSleep ?? 7.5} hrs/night`, card3X + 10, currentY + 60);
+
+      currentY += cardHeight + 14;
+
+      // Section: Visual Health Trends (Weight & BP Over Time)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(27, 59, 43);
+      doc.text('VISUAL HEALTH TRENDS (WEIGHT & BLOOD PRESSURE OVER TIME)', margin, currentY);
+
+      currentY += 8;
+      doc.setDrawColor(27, 59, 43);
+      doc.setLineWidth(1);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+
+      currentY += 10;
+
+      // Insert Visual Trend Chart Image
+      if (chartImg) {
+        const chartHeight = 185;
+        doc.addImage(chartImg, 'PNG', margin, currentY, contentWidth, chartHeight);
+        currentY += chartHeight + 14;
+      }
+
+      // Check if page needs break for table
+      if (currentY + 140 > pageHeight - 50) {
+        doc.addPage();
+        currentY = 66;
+      }
+
+      // Section: Chronological Metrics Log Table
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(27, 59, 43);
+      doc.text(`RECORDED HEALTH METRICS LOGS (${filteredMetrics.length})`, margin, currentY);
+
+      currentY += 8;
+      doc.setDrawColor(27, 59, 43);
+      doc.setLineWidth(1);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 8;
+
+      // Table Header Row
+      const tableRowHeight = 18;
+      doc.setFillColor(246, 242, 233);
+      doc.rect(margin, currentY, contentWidth, tableRowHeight, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(27, 59, 43);
+
+      doc.text('DATE', margin + 6, currentY + 12);
+      doc.text('WEIGHT', margin + 65, currentY + 12);
+      doc.text('BLOOD PRESSURE', margin + 125, currentY + 12);
+      doc.text('BLOOD SUGAR', margin + 215, currentY + 12);
+      doc.text('SLEEP', margin + 295, currentY + 12);
+      doc.text('MOOD', margin + 345, currentY + 12);
+      doc.text('SYMPTOMS & CLINICAL NOTES', margin + 395, currentY + 12);
+
+      currentY += tableRowHeight;
+
+      // Table Data Rows
+      filteredMetrics.forEach((m, idx) => {
+        if (currentY + tableRowHeight > pageHeight - 50) {
+          doc.addPage();
+          currentY = 66;
+
+          // Re-draw table header on new page
+          doc.setFillColor(246, 242, 233);
+          doc.rect(margin, currentY, contentWidth, tableRowHeight, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor(27, 59, 43);
+          doc.text('DATE', margin + 6, currentY + 12);
+          doc.text('WEIGHT', margin + 65, currentY + 12);
+          doc.text('BLOOD PRESSURE', margin + 125, currentY + 12);
+          doc.text('BLOOD SUGAR', margin + 215, currentY + 12);
+          doc.text('SLEEP', margin + 295, currentY + 12);
+          doc.text('MOOD', margin + 345, currentY + 12);
+          doc.text('SYMPTOMS & CLINICAL NOTES', margin + 395, currentY + 12);
+          currentY += tableRowHeight;
+        }
+
+        // Alternating row background
+        if (idx % 2 === 1) {
+          doc.setFillColor(252, 250, 246);
+          doc.rect(margin, currentY, contentWidth, tableRowHeight, 'F');
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(50, 50, 50);
+
+        doc.text(m.timestamp, margin + 6, currentY + 12);
+        doc.text(m.weight ? `${m.weight} kg` : '-', margin + 65, currentY + 12);
+        doc.text(`${m.systolicBp}/${m.diastolicBp} mmHg`, margin + 125, currentY + 12);
+        doc.text(m.bloodSugar ? `${m.bloodSugar} mg/dL` : '-', margin + 215, currentY + 12);
+        doc.text(m.sleepHours ? `${m.sleepHours} hrs` : '-', margin + 295, currentY + 12);
+        doc.text(m.mood || '-', margin + 345, currentY + 12);
+
+        const symptomSnippet = m.symptoms && m.symptoms.length > 0 ? m.symptoms.join(', ') : 'None logged';
+        const truncatedSymptoms = symptomSnippet.length > 32 ? symptomSnippet.substring(0, 32) + '...' : symptomSnippet;
+        doc.text(truncatedSymptoms, margin + 395, currentY + 12);
+
+        currentY += tableRowHeight;
+      });
+
+      currentY += 12;
+
+      // Clinical AI Analysis Assessment (if generated)
+      if (analysisResult) {
+        if (currentY + 80 > pageHeight - 50) {
+          doc.addPage();
+          currentY = 66;
+        }
+
+        doc.setFillColor(243, 247, 244);
+        doc.setDrawColor(163, 212, 182);
+        doc.roundedRect(margin, currentY, contentWidth, 75, 4, 4, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(27, 59, 43);
+        doc.text(`AI CLINICAL RECOVERY ASSESSMENT (Score: ${analysisResult.recoveryScore} / 100)`, margin + 10, currentY + 16);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(50, 50, 50);
+        const summaryLines = doc.splitTextToSize(analysisResult.healthStatusSummary || '', contentWidth - 20);
+        doc.text(summaryLines, margin + 10, currentY + 30);
+
+        if (analysisResult.consultationRecommendation) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(27, 59, 43);
+          doc.text(`Consultation Guidance: ${analysisResult.consultationRecommendation.substring(0, 100)}`, margin + 10, currentY + 62);
+        }
+
+        currentY += 85;
+      }
+
+      // Medical Disclaimer Box
+      if (currentY + 45 > pageHeight - 45) {
+        doc.addPage();
+        currentY = 66;
+      }
+
+      doc.setFillColor(248, 235, 234);
+      doc.setDrawColor(238, 216, 215);
+      doc.roundedRect(margin, currentY, contentWidth, 38, 4, 4, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(139, 38, 62);
+      doc.text('OFFICIAL CLINICAL PROGRESS DISCLAIMER', margin + 10, currentY + 14);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(92, 86, 71);
+      doc.text(
+        'This document is an automated clinical summary of personal biometric vitals and weight/BP trajectories. It is designed to empower consultations with registered healthcare practitioners and does not constitute a diagnostic replacement for primary clinical examination.',
+        margin + 10,
+        currentY + 26
+      );
+
+      // Number of pages stamping
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        addHeaderAndFooter(i, totalPages);
+      }
+
+      // Save PDF
+      const cleanPatient = patientName.replace(/\s+/g, '_');
+      const filename = `JevanCare_Health_Progress_Report_${cleanPatient}_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(filename);
+
+      // Audit Log
+      auditLogger.logAction(
+        'EXPORT_HEALTH_PROGRESS_REPORT_PDF',
+        `Generated and downloaded health metrics progress report PDF (${filteredMetrics.length} records, range: ${timeRange})`,
+        currentProfile
+      );
+
+      setExportNotice(`Health progress PDF report downloaded successfully! (${filteredMetrics.length} records included)`);
+      setTimeout(() => setExportNotice(null), 4000);
+    } catch (err: any) {
+      console.error('PDF Report Generation Error:', err);
+      setExportNotice('Failed to generate PDF report. Please try again.');
+      setTimeout(() => setExportNotice(null), 4000);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  }, [filteredMetrics, currentProfile, timeRange, metricsStats, analysisResult, generateTrendChartImage]);
+
+  // Recharts Custom Dot with 7-Day Trend Indicator Icons (green up/down or red up/down)
+  const MetricTrendDot: React.FC<any> = ({
+    cx,
+    cy,
+    payload,
+    stroke,
+    metricKey,
+  }) => {
+    if (cx === undefined || cy === undefined || isNaN(cx) || isNaN(cy) || !payload) {
+      return null;
+    }
+
+    const trend = showTrendIndicators && metricKey ? get7DayTrend(payload.timestamp, metricKey) : null;
+    const baseColor = stroke || (isDark ? '#e0ded8' : '#1b3b2b');
+
+    // Default clean dot if indicators are toggled off or no prior data exists
+    if (!trend || !showTrendIndicators) {
+      return (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={4}
+          fill={baseColor}
+          stroke="#ffffff"
+          strokeWidth={1.5}
+        />
+      );
+    }
+
+    // Offset positioning per metric so arrows don't collide or hide the line
+    let badgeX = cx + 8;
+    let badgeY = cy - 8;
+    if (metricKey === 'diastolicBp') {
+      badgeX = cx + 8;
+      badgeY = cy + 9;
+    } else if (metricKey === 'weight') {
+      badgeX = cx + 9;
+      badgeY = cy - 8;
+    } else if (metricKey === 'sleepHours') {
+      badgeX = cx;
+      badgeY = cy - 12;
+    }
+
+    const badgeFill = isDark
+      ? trend.isNeutral
+        ? '#1e293b'
+        : trend.isPositive
+        ? '#064e3b'
+        : '#4c0519'
+      : trend.isNeutral
+      ? '#f8fafc'
+      : trend.isPositive
+      ? '#ecfdf5'
+      : '#fff1f2';
+
+    return (
+      <g className="transition-all select-none cursor-pointer">
+        <title>{`${payload.timestamp} · ${metricKey}: ${trend.summaryText}`}</title>
+        {/* Core data point marker */}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={4.5}
+          fill={baseColor}
+          stroke="#ffffff"
+          strokeWidth={1.8}
+        />
+
+        {/* Small 7-Day Trend Indicator Icon Badge */}
+        <g transform={`translate(${badgeX}, ${badgeY})`}>
+          <circle
+            cx={0}
+            cy={0}
+            r={6}
+            fill={badgeFill}
+            stroke={trend.color}
+            strokeWidth={1.4}
+          />
+          {trend.direction === 'up' ? (
+            <path
+              d="M 0,-3.2 L -2.8,0.2 L -1,0.2 L -1,3 L 1,3 L 1,0.2 L 2.8,0.2 Z"
+              fill={trend.color}
+            />
+          ) : trend.direction === 'down' ? (
+            <path
+              d="M 0,3.2 L -2.8,-0.2 L -1,-0.2 L -1,-3 L 1,-3 L 1,-0.2 L 2.8,-0.2 Z"
+              fill={trend.color}
+            />
+          ) : (
+            <line
+              x1={-2}
+              y1={0}
+              x2={2}
+              y2={0}
+              stroke={trend.color}
+              strokeWidth={1.6}
+              strokeLinecap="round"
+            />
+          )}
+        </g>
+      </g>
+    );
+  };
+
+  // Custom Recharts Tooltip Component with 7-Day Trend Badges
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      const currentLog = filteredMetrics.find((m) => m.timestamp === label);
       return (
-        <div className="bg-[#1b3b2b] text-white p-3 rounded-2xl shadow-xl border border-[#3b604a] text-xs space-y-1.5 animate-in fade-in">
-          <p className="font-bold text-amber-200 border-b border-white/10 pb-1 flex items-center justify-between gap-3">
-            <span>Date: {label}</span>
-            <Calendar className="w-3.5 h-3.5 text-amber-300" />
-          </p>
-          {payload.map((entry: any, index: number) => (
-            <div key={`item-${index}`} className="flex items-center justify-between gap-4">
-              <span className="flex items-center gap-1.5 font-medium" style={{ color: entry.color }}>
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
-                {entry.name}:
+        <div className="bg-[#1b3b2b] text-white p-3.5 rounded-2xl shadow-xl border border-[#3b604a] text-xs space-y-2.5 animate-in fade-in min-w-[230px]">
+          <p className="font-bold text-amber-200 border-b border-white/10 pb-1.5 flex items-center justify-between gap-3">
+            <span className="flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-amber-300" />
+              <span>Date: {label}</span>
+            </span>
+            {currentLog?.mood && (
+              <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-md text-amber-300">
+                Mood: {currentLog.mood}
               </span>
-              <span className="font-extrabold text-white">{entry.value}</span>
+            )}
+          </p>
+
+          <div className="space-y-2">
+            {payload.map((entry: any, index: number) => {
+              const isWeight = entry.dataKey === 'weight';
+              const isSys = entry.dataKey === 'systolicBp';
+              const isDia = entry.dataKey === 'diastolicBp';
+              const trend = entry.dataKey ? get7DayTrend(label, entry.dataKey) : null;
+
+              return (
+                <div key={`item-${index}`} className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="flex items-center gap-1.5 font-medium" style={{ color: entry.color }}>
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                      {entry.name}:
+                    </span>
+                    <span className="font-extrabold text-white">
+                      {entry.value} {isWeight ? 'kg' : isSys || isDia ? 'mmHg' : ''}
+                    </span>
+                  </div>
+
+                  {/* 7-Day Movement Indicator with Direction & Health Valence */}
+                  {trend && (
+                    <div className="flex items-center justify-between gap-2 text-[10px] pl-3.5 pb-0.5">
+                      <span className="text-white/60">7-Day Movement:</span>
+                      <span
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold ${
+                          trend.isNeutral
+                            ? 'bg-stone-500/25 text-stone-300 border border-stone-500/40'
+                            : trend.isPositive
+                            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-rose-500/25 text-rose-300 border border-rose-500/40'
+                        }`}
+                      >
+                        {trend.direction === 'up' ? (
+                          <span className="text-xs leading-none">▲</span>
+                        ) : trend.direction === 'down' ? (
+                          <span className="text-xs leading-none">▼</span>
+                        ) : (
+                          <span className="text-xs leading-none">—</span>
+                        )}
+                        <span>{trend.delta > 0 ? `+${trend.delta}` : trend.delta}</span>
+                        <span className="text-[9px] font-medium opacity-90">
+                          ({trend.isNeutral ? 'Stable' : trend.isPositive ? 'Positive Trend' : 'Negative Trend'})
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {currentLog?.symptoms && currentLog.symptoms.length > 0 && (
+            <div className="pt-1.5 border-t border-white/10 text-[11px] text-emerald-200">
+              <span className="text-white/70 block text-[10px]">Notes:</span>
+              <span>{currentLog.symptoms.join(', ')}</span>
             </div>
-          ))}
+          )}
         </div>
       );
     }
@@ -487,6 +1496,21 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Download Report Button */}
+          <button
+            onClick={handleDownloadReportPdf}
+            disabled={isGeneratingPdf || safeMetrics.length === 0}
+            className="px-4 py-2.5 rounded-2xl bg-[#1b3b2b] hover:bg-[#284f3b] text-white font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            title="Download comprehensive PDF Health Progress Report"
+          >
+            {isGeneratingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin text-[#a3d4b6]" />
+            ) : (
+              <Download className="w-4 h-4 text-emerald-300" />
+            )}
+            <span>Download Report</span>
+          </button>
+
           {/* CSV Export Button */}
           <button
             onClick={handleExportCSV}
@@ -500,6 +1524,22 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
               <FileSpreadsheet className="w-4 h-4 text-[#8b263e] dark:text-rose-400" />
             )}
             <span>Export CSV Report</span>
+          </button>
+
+          {/* Quick BMI Calculator Anchor */}
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById('bmi-calculator-module');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }}
+            className="px-4 py-2.5 rounded-2xl bg-[#f6f2e9] dark:bg-[#23382b] hover:bg-[#e8eee5] dark:hover:bg-[#2e4738] text-[#1b3b2b] dark:text-[#a3d4b6] font-bold text-xs border border-[#e6dfd3] dark:border-[#2f4637] transition-all flex items-center gap-2 cursor-pointer"
+            title="Jump to BMI Health Range Calculator"
+          >
+            <Scale className="w-4 h-4 text-[#2b503b] dark:text-[#a3d4b6]" />
+            <span>BMI Calculator</span>
           </button>
 
           {/* AI Progress Report Button */}
@@ -621,54 +1661,389 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
             </div>
           ) : (
             <>
-              {/* Blood Pressure Time-Series Line Chart */}
-              <div className="bg-white dark:bg-[#18261e] rounded-3xl p-5 sm:p-6 border border-[#e6dfd3] dark:border-[#283c2e] shadow-xs space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-[#e6dfd3] dark:border-[#23382b]">
-                  <h2 className="font-bold text-sm text-[#1b3b2b] dark:text-[#f2f0e8] flex items-center gap-2">
-                    <HeartPulse className="w-4 h-4 text-[#8b263e]" />
-                    <span>Blood Pressure Trend (mmHg)</span>
-                  </h2>
-                  <span className="text-[11px] text-[#5c5647] dark:text-[#b0aaa0] font-medium">
-                    Benchmark: &lt;120/80 mmHg
-                  </span>
+              {/* Quick Metrics Stat Cards */}
+              {metricsStats && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Card 1: Weight Progress */}
+                  <div className="bg-white dark:bg-[#18261e] p-4 rounded-2xl border border-[#e6dfd3] dark:border-[#283c2e] shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#5c5647] dark:text-[#b0aaa0] flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5 text-[#0284c7]" />
+                        <span>Weight Progression</span>
+                      </span>
+                      {metricsStats.weightChange !== 0 && (
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 ${
+                            metricsStats.weightChange < 0
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
+                          }`}
+                        >
+                          {metricsStats.weightChange < 0 ? (
+                            <TrendingDown className="w-3 h-3" />
+                          ) : (
+                            <TrendingUp className="w-3 h-3" />
+                          )}
+                          <span>
+                            {metricsStats.weightChange > 0 ? '+' : ''}
+                            {metricsStats.weightChange} kg
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-extrabold text-[#1b3b2b] dark:text-[#f2f0e8]">
+                        {metricsStats.latestWeight}
+                      </span>
+                      <span className="text-xs font-semibold text-[#5c5647] dark:text-[#b0aaa0]">kg</span>
+                    </div>
+                    <p className="text-[10px] text-[#827b6c] dark:text-[#969082]">
+                      Range: {metricsStats.minWeight} – {metricsStats.maxWeight} kg · Avg: {metricsStats.avgWeight} kg
+                    </p>
+                  </div>
+
+                  {/* Card 2: Blood Pressure Profile */}
+                  <div className="bg-white dark:bg-[#18261e] p-4 rounded-2xl border border-[#e6dfd3] dark:border-[#283c2e] shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#5c5647] dark:text-[#b0aaa0] flex items-center gap-1.5">
+                        <HeartPulse className="w-3.5 h-3.5 text-[#8b263e]" />
+                        <span>Blood Pressure</span>
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${metricsStats.bpBadgeColor}`}
+                      >
+                        {metricsStats.bpCategory}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-extrabold text-[#1b3b2b] dark:text-[#f2f0e8]">
+                        {metricsStats.latest.systolicBp}/{metricsStats.latest.diastolicBp}
+                      </span>
+                      <span className="text-xs font-semibold text-[#5c5647] dark:text-[#b0aaa0]">mmHg</span>
+                    </div>
+                    <p className="text-[10px] text-[#827b6c] dark:text-[#969082]">
+                      Period Mean: {metricsStats.avgSys}/{metricsStats.avgDia} mmHg · Pulse: {metricsStats.latest.systolicBp - metricsStats.latest.diastolicBp}
+                    </p>
+                  </div>
+
+                  {/* Card 3: Glycemic & Rest */}
+                  <div className="bg-white dark:bg-[#18261e] p-4 rounded-2xl border border-[#e6dfd3] dark:border-[#283c2e] shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#5c5647] dark:text-[#b0aaa0] flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Glycemic & Rest</span>
+                      </span>
+                      <span className="text-[10px] text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-1.5 py-0.5 rounded-md font-bold">
+                        Avg {metricsStats.avgSugar} mg/dL
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-extrabold text-[#1b3b2b] dark:text-[#f2f0e8]">
+                        {metricsStats.avgSleep}
+                      </span>
+                      <span className="text-xs font-semibold text-[#5c5647] dark:text-[#b0aaa0]">hrs/night avg</span>
+                    </div>
+                    <p className="text-[10px] text-[#827b6c] dark:text-[#969082]">
+                      Latest Sugar: {metricsStats.latest.bloodSugar ?? 100} mg/dL · Pain: {metricsStats.avgPain}/10
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Primary Interactive Chart: Weight & Blood Pressure Trends Over Time */}
+              <div className="bg-white dark:bg-[#18261e] rounded-3xl p-5 sm:p-6 border border-[#e6dfd3] dark:border-[#283c2e] shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#e6dfd3] dark:border-[#23382b]">
+                  <div>
+                    <h2 className="font-bold text-sm text-[#1b3b2b] dark:text-[#f2f0e8] flex items-center gap-2">
+                      <HeartPulse className="w-4 h-4 text-[#8b263e]" />
+                      <span>Weight & Blood Pressure Trends</span>
+                    </h2>
+                    <p className="text-[11px] text-[#5c5647] dark:text-[#b0aaa0] mt-0.5">
+                      Correlating body mass (kg) against systolic and diastolic pressure (mmHg) over time.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1.5 text-[10px]">
+                      <span className="font-bold text-[#5c5647] dark:text-[#b0aaa0]">7-Day Movement:</span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                        <span className="text-[11px] leading-none">▲/▼</span>
+                        <span>Green: Positive Trend (Health Improving)</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800 shadow-2xs">
+                        <span className="text-[11px] leading-none">▲/▼</span>
+                        <span>Red: Negative Trend (Elevated / Attention)</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-medium bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-700">
+                        <span>—</span>
+                        <span>Stable</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* View Mode Segmented Controls */}
+                    <div className="inline-flex p-1 rounded-xl bg-[#f6f2e9] dark:bg-[#142018] border border-[#e6dfd3] dark:border-[#23382b] text-[11px] font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setChartViewMode('combined')}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          chartViewMode === 'combined'
+                            ? 'bg-[#1b3b2b] text-white shadow-2xs'
+                            : 'text-[#5c5647] dark:text-[#b0aaa0] hover:text-[#1b3b2b] dark:hover:text-white'
+                        }`}
+                      >
+                        Combined (BP & Weight)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChartViewMode('weight')}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          chartViewMode === 'weight'
+                            ? 'bg-[#1b3b2b] text-white shadow-2xs'
+                            : 'text-[#5c5647] dark:text-[#b0aaa0] hover:text-[#1b3b2b] dark:hover:text-white'
+                        }`}
+                      >
+                        Weight Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChartViewMode('bp')}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          chartViewMode === 'bp'
+                            ? 'bg-[#1b3b2b] text-white shadow-2xs'
+                            : 'text-[#5c5647] dark:text-[#b0aaa0] hover:text-[#1b3b2b] dark:hover:text-white'
+                        }`}
+                      >
+                        BP Only
+                      </button>
+                    </div>
+
+                    {/* 7-Day Indicators Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setShowTrendIndicators(!showTrendIndicators)}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                        showTrendIndicators
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-2xs'
+                          : 'bg-[#f6f2e9] dark:bg-[#142018] text-[#5c5647] dark:text-[#b0aaa0] border-[#e6dfd3] dark:border-[#23382b]'
+                      }`}
+                      title="Toggle 7-day movement indicator icons on chart data points"
+                    >
+                      <Activity className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>7d Trend Badges: {showTrendIndicators ? 'ON' : 'OFF'}</span>
+                    </button>
+
+                    {/* Chart Context Download Report Button */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadReportPdf}
+                      disabled={isGeneratingPdf || filteredMetrics.length === 0}
+                      className="px-3 py-1.5 rounded-xl bg-[#e8eee5] dark:bg-[#23382b] hover:bg-[#d8e2d4] dark:hover:bg-[#2a4435] text-[#1b3b2b] dark:text-[#a3d4b6] font-bold text-xs border border-[#cfdcd0] dark:border-[#2f4637] transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      title="Generate and download PDF Health Progress Report"
+                    >
+                      {isGeneratingPdf ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1b3b2b] dark:text-[#a3d4b6]" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 text-[#2b503b] dark:text-[#a3d4b6]" />
+                      )}
+                      <span>Download Report</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="h-64 w-full pt-2">
+                <div className="h-80 w-full pt-1">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={filteredMetrics} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} opacity={0.6} />
-                      <XAxis dataKey="timestamp" stroke={axisColor} fontSize={11} tickLine={false} />
-                      <YAxis stroke={axisColor} fontSize={11} domain={[50, 180]} tickLine={false} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px', color: axisColor }} />
-                      <Line
-                        type="monotone"
-                        dataKey="systolicBp"
-                        stroke={isDark ? '#e27d8e' : '#8b263e'}
-                        name="Systolic BP"
-                        strokeWidth={2.5}
-                        activeDot={{ r: 6 }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="diastolicBp"
-                        stroke={isDark ? '#a3d4b6' : '#2b503b'}
-                        name="Diastolic BP"
-                        strokeWidth={2.5}
-                        activeDot={{ r: 6 }}
-                      />
-                    </LineChart>
+                    {chartViewMode === 'combined' ? (
+                      <ComposedChart data={filteredMetrics} margin={{ top: 22, right: 25, left: -10, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} opacity={0.6} />
+                        <XAxis dataKey="timestamp" stroke={axisColor} fontSize={11} tickLine={false} />
+                        
+                        {/* Left Y-Axis: Blood Pressure */}
+                        <YAxis
+                          yAxisId="bp"
+                          stroke={axisColor}
+                          fontSize={11}
+                          domain={[60, 160]}
+                          tickLine={false}
+                          label={{
+                            value: 'BP (mmHg)',
+                            angle: -90,
+                            position: 'insideLeft',
+                            style: { fill: axisColor, fontSize: 10 }
+                          }}
+                        />
+
+                        {/* Right Y-Axis: Weight */}
+                        <YAxis
+                          yAxisId="weight"
+                          orientation="right"
+                          stroke="#0284c7"
+                          fontSize={11}
+                          domain={['dataMin - 1', 'dataMax + 1']}
+                          tickLine={false}
+                          label={{
+                            value: 'Weight (kg)',
+                            angle: 90,
+                            position: 'insideRight',
+                            style: { fill: '#0284c7', fontSize: 10 }
+                          }}
+                        />
+
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px', color: axisColor }} />
+
+                        {/* Reference lines for BP guidelines */}
+                        <ReferenceLine
+                          yAxisId="bp"
+                          y={120}
+                          stroke="#e11d48"
+                          strokeDasharray="3 3"
+                          label={{ value: 'Systolic Limit (120)', position: 'insideTopLeft', fontSize: 9.5, fill: '#e11d48' }}
+                        />
+                        <ReferenceLine
+                          yAxisId="bp"
+                          y={80}
+                          stroke="#10b981"
+                          strokeDasharray="3 3"
+                          label={{ value: 'Diastolic Target (80)', position: 'insideBottomLeft', fontSize: 9.5, fill: '#10b981' }}
+                        />
+
+                        {/* Systolic BP Line */}
+                        <Line
+                          yAxisId="bp"
+                          type="monotone"
+                          dataKey="systolicBp"
+                          stroke={isDark ? '#e27d8e' : '#8b263e'}
+                          name="Systolic BP (mmHg)"
+                          strokeWidth={2.5}
+                          dot={(props: any) => <MetricTrendDot {...props} metricKey="systolicBp" />}
+                          activeDot={{ r: 6 }}
+                        />
+
+                        {/* Diastolic BP Line */}
+                        <Line
+                          yAxisId="bp"
+                          type="monotone"
+                          dataKey="diastolicBp"
+                          stroke={isDark ? '#a3d4b6' : '#2b503b'}
+                          name="Diastolic BP (mmHg)"
+                          strokeWidth={2.5}
+                          dot={(props: any) => <MetricTrendDot {...props} metricKey="diastolicBp" />}
+                          activeDot={{ r: 6 }}
+                        />
+
+                        {/* Body Weight Line */}
+                        <Line
+                          yAxisId="weight"
+                          type="monotone"
+                          dataKey="weight"
+                          stroke={isDark ? '#38bdf8' : '#0284c7'}
+                          name="Weight (kg)"
+                          strokeWidth={2.5}
+                          strokeDasharray="4 4"
+                          dot={(props: any) => <MetricTrendDot {...props} metricKey="weight" />}
+                          activeDot={{ r: 7 }}
+                        />
+                      </ComposedChart>
+                    ) : chartViewMode === 'weight' ? (
+                      <ComposedChart data={filteredMetrics} margin={{ top: 22, right: 25, left: -10, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} opacity={0.6} />
+                        <XAxis dataKey="timestamp" stroke={axisColor} fontSize={11} tickLine={false} />
+                        <YAxis
+                          stroke="#0284c7"
+                          fontSize={11}
+                          domain={['dataMin - 1', 'dataMax + 1']}
+                          tickLine={false}
+                          label={{
+                            value: 'Weight (kg)',
+                            angle: -90,
+                            position: 'insideLeft',
+                            style: { fill: '#0284c7', fontSize: 10 }
+                          }}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px', color: axisColor }} />
+                        {metricsStats?.avgWeight && (
+                          <ReferenceLine
+                            y={metricsStats.avgWeight}
+                            stroke="#0284c7"
+                            strokeDasharray="3 3"
+                            label={{ value: `Avg (${metricsStats.avgWeight} kg)`, position: 'insideTopLeft', fontSize: 10, fill: '#0284c7' }}
+                          />
+                        )}
+                        <Area
+                          type="monotone"
+                          dataKey="weight"
+                          fill={isDark ? '#0284c730' : '#e0f2fe'}
+                          stroke={isDark ? '#38bdf8' : '#0284c7'}
+                          strokeWidth={2.5}
+                          name="Body Weight (kg)"
+                          dot={(props: any) => <MetricTrendDot {...props} metricKey="weight" />}
+                          activeDot={{ r: 6 }}
+                        />
+                      </ComposedChart>
+                    ) : (
+                      <LineChart data={filteredMetrics} margin={{ top: 22, right: 25, left: -10, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} opacity={0.6} />
+                        <XAxis dataKey="timestamp" stroke={axisColor} fontSize={11} tickLine={false} />
+                        <YAxis
+                          stroke={axisColor}
+                          fontSize={11}
+                          domain={[50, 180]}
+                          tickLine={false}
+                          label={{
+                            value: 'Blood Pressure (mmHg)',
+                            angle: -90,
+                            position: 'insideLeft',
+                            style: { fill: axisColor, fontSize: 10 }
+                          }}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px', color: axisColor }} />
+                        <ReferenceLine
+                          y={120}
+                          stroke="#e11d48"
+                          strokeDasharray="3 3"
+                          label={{ value: 'Systolic Limit (120)', position: 'insideTopLeft', fontSize: 10, fill: '#e11d48' }}
+                        />
+                        <ReferenceLine
+                          y={80}
+                          stroke="#10b981"
+                          strokeDasharray="3 3"
+                          label={{ value: 'Diastolic Target (80)', position: 'insideBottomLeft', fontSize: 10, fill: '#10b981' }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="systolicBp"
+                          stroke={isDark ? '#e27d8e' : '#8b263e'}
+                          name="Systolic BP"
+                          strokeWidth={2.5}
+                          dot={(props: any) => <MetricTrendDot {...props} metricKey="systolicBp" />}
+                          activeDot={{ r: 6 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="diastolicBp"
+                          stroke={isDark ? '#a3d4b6' : '#2b503b'}
+                          name="Diastolic BP"
+                          strokeWidth={2.5}
+                          dot={(props: any) => <MetricTrendDot {...props} metricKey="diastolicBp" />}
+                          activeDot={{ r: 6 }}
+                        />
+                      </LineChart>
+                    )}
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Blood Glucose & Sleep Hours Bar/Line Chart */}
+              {/* Secondary Chart: Blood Glucose & Sleep Hours Bar/Line Chart */}
               <div className="bg-white dark:bg-[#18261e] rounded-3xl p-5 sm:p-6 border border-[#e6dfd3] dark:border-[#283c2e] shadow-xs space-y-3">
                 <div className="flex items-center justify-between pb-2 border-b border-[#e6dfd3] dark:border-[#23382b]">
                   <h2 className="font-bold text-sm text-[#1b3b2b] dark:text-[#f2f0e8] flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                     <span>Blood Sugar (mg/dL) & Sleep Duration (Hrs)</span>
                   </h2>
+                  <span className="text-[11px] text-[#5c5647] dark:text-[#b0aaa0] font-medium">
+                    Target: 70–120 mg/dL · 7–9 hrs sleep
+                  </span>
                 </div>
 
                 <div className="h-60 w-full pt-2">
@@ -690,8 +2065,9 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
 
         </div>
 
-        {/* Log Vitals Form Column */}
-        <div className="bg-white dark:bg-[#18261e] rounded-3xl p-6 border border-[#e6dfd3] dark:border-[#283c2e] shadow-xs space-y-4 h-fit">
+        {/* Right Column: Log Vitals Form & BMI Calculator Module */}
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-[#18261e] rounded-3xl p-6 border border-[#e6dfd3] dark:border-[#283c2e] shadow-xs space-y-4">
           <div className="pb-3 border-b border-[#e6dfd3] dark:border-[#23382b] flex items-center justify-between gap-2">
             <div>
               <h2 className="font-bold text-sm text-[#1b3b2b] dark:text-[#f2f0e8] flex items-center gap-2">
@@ -940,8 +2316,21 @@ export const HealthProgressTracker: React.FC<HealthProgressTrackerProps> = ({
           </form>
         </div>
 
+        {/* BMI Calculator Module */}
+        <div id="bmi-calculator-module">
+          <BmiCalculatorModule
+            initialWeightKg={Number(weight) || 68.5}
+            initialHeightCm={170}
+            onApplyWeight={(syncedWeightKg) => setWeight(syncedWeightKg.toString())}
+          />
+        </div>
+      </div>
+
       </div>
 
     </div>
   );
 };
+
+export default HealthProgressTracker;
+

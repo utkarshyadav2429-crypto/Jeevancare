@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Appointment,
   ActiveMedicine,
@@ -26,6 +26,10 @@ import {
   initialDoctorPatients,
   initialDoctorMessages
 } from '../../data/initialData';
+import {
+  supabaseClinicalNotes,
+  supabaseConsultationMessages
+} from '../../services/supabaseService';
 
 interface DoctorWorkspacePortalProps {
   doctorProfile?: UserProfile;
@@ -79,12 +83,52 @@ export const DoctorWorkspacePortal: React.FC<DoctorWorkspacePortalProps> = ({
     }
   };
 
+  useEffect(() => {
+    let isMounted = true;
+    if (selectedPatientId) {
+      supabaseClinicalNotes.fetchNotesForPatient(selectedPatientId).then((dbNotes) => {
+        if (!isMounted || !dbNotes || dbNotes.length === 0) return;
+        const mapped: ClinicalNote[] = dbNotes.map((d: any) => ({
+          id: d.id,
+          patientId: d.patient_id,
+          patientName: d.patient_name,
+          doctorId: d.doctor_id,
+          doctorName: d.doctor_name,
+          date: d.date,
+          type: d.note_type || 'SOAP Note',
+          subjective: d.subjective,
+          objective: d.objective,
+          assessment: d.assessment,
+          plan: d.plan,
+          vitals: d.vitals_snapshot || { bp: '120/80', pulse: 72, temp: 98.6, spO2: 98 },
+          doctorSignature: d.doctor_signature,
+          isLocked: d.is_locked ?? true,
+        }));
+        setClinicalNotes((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newOnes = mapped.filter((m) => !existingIds.has(m.id));
+          return [...newOnes, ...prev];
+        });
+      }).catch(() => {});
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedPatientId]);
+
   const handleAddClinicalNote = (note: ClinicalNote) => {
     setClinicalNotes((prev) => [note, ...prev]);
+    supabaseClinicalNotes.saveClinicalNote(note).catch(() => {});
   };
 
   const handleSendMessage = (msg: DoctorPatientMessage) => {
     setMessages((prev) => [...prev, msg]);
+    supabaseConsultationMessages.sendMessage({
+      appointmentId: msg.patientId,
+      senderId: doctorProfile.id,
+      senderRole: 'doctor',
+      text: msg.text,
+    }).catch(() => {});
   };
 
   return (

@@ -24,6 +24,8 @@ flowchart TD
     end
 ```
 
+> **Detailed Application Workflow**: For complete end-to-end user journeys, sequence diagrams, and subsystem state transitions, refer to [Application Workflow Specification](./APPLICATION_WORKFLOW.md).
+
 ---
 
 ## 2. Frontend Architecture

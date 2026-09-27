@@ -19,6 +19,10 @@ function sanitizeUrl(candidate?: string): string {
       return DEFAULT_SUPABASE_URL;
     }
   }
+  // Support raw project reference e.g. "jwphdtforsqrojhkcyrb"
+  if (/^[a-z0-9_-]{10,40}$/i.test(trimmed)) {
+    return `https://${trimmed}.supabase.co`;
+  }
   return DEFAULT_SUPABASE_URL;
 }
 
@@ -28,9 +32,9 @@ export const SUPABASE_ANON_KEY = (rawKey && !rawKey.includes('MY_SUPABASE') && r
   : DEFAULT_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(
-  rawUrl &&
-  (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) &&
-  !rawUrl.includes('MY_SUPABASE') &&
+  SUPABASE_URL &&
+  (SUPABASE_URL.startsWith('http://') || SUPABASE_URL.startsWith('https://')) &&
+  !SUPABASE_URL.includes('MY_SUPABASE') &&
   rawKey &&
   !rawKey.includes('MY_SUPABASE') &&
   rawKey.length > 20

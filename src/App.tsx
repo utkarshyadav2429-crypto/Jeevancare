@@ -9,63 +9,89 @@ import { SEOHeadManager } from './components/common/SEOHeadManager';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { useAuth } from './context/AuthContext';
 
-// Dynamic Lazy Loading of heavy feature modules for optimized bundle splitting & faster TTI
-const AuthModal = lazy(() =>
-  import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
+import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { lazyWithRetry } from './utils/lazyWithRetry';
+
+// Dynamic Lazy Loading with automatic retry and error recovery for optimized bundle splitting & faster TTI
+const AuthModal = lazyWithRetry(
+  () => import('./components/AuthModal'),
+  'AuthModal'
 );
-const AuthScreen = lazy(() =>
-  import('./components/auth/AuthScreen').then((m) => ({ default: m.AuthScreen }))
+const AuthScreen = lazyWithRetry(
+  () => import('./components/auth/AuthScreen'),
+  'AuthScreen'
 );
-const OnboardingModal = lazy(() =>
-  import('./components/common/OnboardingModal').then((m) => ({ default: m.OnboardingModal }))
+const OnboardingModal = lazyWithRetry(
+  () => import('./components/common/OnboardingModal'),
+  'OnboardingModal'
 );
-const PrescriptionScanner = lazy(() =>
-  import('./components/scanner/PrescriptionScanner').then((m) => ({ default: m.PrescriptionScanner }))
+const PrescriptionScanner = lazyWithRetry(
+  () => import('./components/scanner/PrescriptionScanner'),
+  'PrescriptionScanner'
 );
-const MedicineIntelligence = lazy(() =>
-  import('./components/medicine/MedicineIntelligence').then((m) => ({ default: m.MedicineIntelligence }))
+const MedicineIntelligence = lazyWithRetry(
+  () => import('./components/medicine/MedicineIntelligence'),
+  'MedicineIntelligence'
 );
-const DoctorConsultation = lazy(() =>
-  import('./components/doctors/DoctorConsultation').then((m) => ({ default: m.DoctorConsultation }))
+const DoctorConsultation = lazyWithRetry(
+  () => import('./components/doctors/DoctorConsultation'),
+  'DoctorConsultation'
 );
-const NearbyHealthcareMap = lazy(() =>
-  import('./components/map/NearbyHealthcareMap').then((m) => ({ default: m.NearbyHealthcareMap }))
+const NearbyHealthcareMap = lazyWithRetry(
+  () => import('./components/map/NearbyHealthcareMap'),
+  'NearbyHealthcareMap'
 );
-const FactCheckCenter = lazy(() =>
-  import('./components/rumor/FactCheckCenter').then((m) => ({ default: m.FactCheckCenter }))
+const FactCheckCenter = lazyWithRetry(
+  () => import('./components/rumor/FactCheckCenter'),
+  'FactCheckCenter'
 );
-const AIHealthAssistant = lazy(() =>
-  import('./components/assistant/AIHealthAssistant').then((m) => ({ default: m.AIHealthAssistant }))
+const AIHealthAssistant = lazyWithRetry(
+  () => import('./components/assistant/AIHealthAssistant'),
+  'AIHealthAssistant'
 );
-const HealthProgressTracker = lazy(() =>
-  import('./components/progress/HealthProgressTracker').then((m) => ({ default: m.HealthProgressTracker }))
+const HealthProgressTracker = lazyWithRetry(
+  () => import('./components/progress/HealthProgressTracker'),
+  'HealthProgressTracker'
 );
-const LifestyleAndHomeCare = lazy(() =>
-  import('./components/lifestyle/LifestyleAndHomeCare').then((m) => ({ default: m.LifestyleAndHomeCare }))
+const LifestyleAndHomeCare = lazyWithRetry(
+  () => import('./components/lifestyle/LifestyleAndHomeCare'),
+  'LifestyleAndHomeCare'
 );
-const MedicalVault = lazy(() =>
-  import('./components/vault/MedicalVault').then((m) => ({ default: m.MedicalVault }))
+const MedicalVault = lazyWithRetry(
+  () => import('./components/vault/MedicalVault'),
+  'MedicalVault'
 );
-const UserProfileCenter = lazy(() =>
-  import('./components/profile/UserProfileCenter').then((m) => ({ default: m.UserProfileCenter }))
+const UserProfileCenter = lazyWithRetry(
+  () => import('./components/profile/UserProfileCenter'),
+  'UserProfileCenter'
 );
-const DoctorWorkspacePortal = lazy(() =>
-  import('./components/doctorportal/DoctorWorkspacePortal').then((m) => ({ default: m.DoctorWorkspacePortal }))
+const DoctorWorkspacePortal = lazyWithRetry(
+  () => import('./components/doctorportal/DoctorWorkspacePortal'),
+  'DoctorWorkspacePortal'
 );
-const AdminAuditPanel = lazy(() =>
-  import('./components/admin/AdminAuditPanel').then((m) => ({ default: m.AdminAuditPanel }))
+const AdminAuditPanel = lazyWithRetry(
+  () => import('./components/admin/AdminAuditPanel'),
+  'AdminAuditPanel'
 );
-const BloodDonationNetwork = lazy(() =>
-  import('./components/blood/BloodDonationNetwork').then((m) => ({ default: m.BloodDonationNetwork }))
+const BloodDonationNetwork = lazyWithRetry(
+  () => import('./components/blood/BloodDonationNetwork'),
+  'BloodDonationNetwork'
 );
-const HealthcareAccessibilityCenter = lazy(() =>
-  import('./components/accessibility/HealthcareAccessibilityCenter').then((m) => ({ default: m.HealthcareAccessibilityCenter }))
+const HealthcareAccessibilityCenter = lazyWithRetry(
+  () => import('./components/accessibility/HealthcareAccessibilityCenter'),
+  'HealthcareAccessibilityCenter'
 );
-const EmergencyHubModal = lazy(() =>
-  import('./components/emergency/EmergencyHubModal').then((m) => ({ default: m.EmergencyHubModal }))
+const EmergencyHubModal = lazyWithRetry(
+  () => import('./components/emergency/EmergencyHubModal'),
+  'EmergencyHubModal'
 );
-const MedBuddyLandingView = lazy(() =>
-  import('./components/medbuddy/MedBuddyLandingView').then((m) => ({ default: m.MedBuddyLandingView }))
+const MedBuddyLandingView = lazyWithRetry(
+  () => import('./components/medbuddy/MedBuddyLandingView'),
+  'MedBuddyLandingView'
+);
+const PresentationDeckModal = lazyWithRetry(
+  () => import('./components/presentation/PresentationDeckModal'),
+  'PresentationDeckModal'
 );
 
 import {
@@ -98,7 +124,8 @@ import {
   supabaseVault,
   supabaseAppointments,
   supabaseHealthMetrics,
-  supabaseReminders
+  supabaseReminders,
+  supabaseEmergencyContacts
 } from './services/supabaseService';
 
 export function App() {
@@ -186,6 +213,7 @@ export function App() {
   // Modals state - Only trigger automatic onboarding for real Account mode users who haven't completed it
   const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isPresentationOpen, setIsPresentationOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => {
     if (isDemoMode) return false;
     return !localStorage.getItem('jeevancare_onboarding_completed');
@@ -311,6 +339,21 @@ export function App() {
     }
   }, [isAccountMode, user?.id]);
 
+  const handleUpdateProfile = useCallback((updated: UserProfile) => {
+    setUserProfile(updated);
+    if (isAccountMode && user?.id) {
+      supabaseProfile.upsertProfile(updated);
+      if (updated.emergencyContactName && updated.emergencyContactPhone) {
+        supabaseEmergencyContacts.saveEmergencyContact(user.id, {
+          name: updated.emergencyContactName,
+          phone: updated.emergencyContactPhone,
+          relation: 'Primary Emergency Contact',
+          isPrimary: true,
+        });
+      }
+    }
+  }, [isAccountMode, user?.id]);
+
   const handleOpenEmergency = useCallback(() => setIsEmergencyOpen(true), []);
   const handleCloseEmergency = useCallback(() => setIsEmergencyOpen(false), []);
   const handleOpenAuth = useCallback(() => setIsAuthOpen(true), []);
@@ -371,6 +414,7 @@ export function App() {
           onOpenEmergency={handleOpenEmergency}
           onOpenAuth={handleOpenAuth}
           onOpenOnboarding={() => setIsOnboardingOpen(true)}
+          onOpenPresentation={() => setIsPresentationOpen(true)}
           isOnline={isOnline}
         />
       </div>
@@ -387,13 +431,14 @@ export function App() {
 
         {/* View Switcher based on activeRole & activeTab with Code-Split Suspense Fallback */}
         <div className="min-h-[600px]">
-          <Suspense
-            fallback={
-              <div className="p-12 flex flex-col items-center justify-center min-h-[400px]">
-                <JevanCareLoader size="lg" color="forest" label="Loading Jevan Care module..." />
-              </div>
-            }
-          >
+          <ErrorBoundary onReset={() => setActiveTab('dashboard')}>
+            <Suspense
+              fallback={
+                <div className="p-12 flex flex-col items-center justify-center min-h-[400px]">
+                  <JevanCareLoader size="lg" color="forest" label="Loading Jevan Care module..." />
+                </div>
+              }
+            >
             {activeRole === 'Doctor' ? (
               <DoctorWorkspacePortal
                 doctorProfile={userProfile}
@@ -406,7 +451,7 @@ export function App() {
                 onAddActiveMedicine={handleAddActiveMedicine}
                 onAddVaultItem={handleAddVaultItem}
                 onUpdateDoctorProfile={(updated) =>
-                  setUserProfile((prev) => ({ ...prev, ...updated }))
+                  handleUpdateProfile({ ...userProfile, ...updated })
                 }
               />
             ) : activeRole === 'MedBuddy' ? (
@@ -498,6 +543,7 @@ export function App() {
                 {activeTab === 'progress' && (
                   <HealthProgressTracker
                     metrics={metricLogs}
+                    metricLogs={metricLogs}
                     onAddMetricLog={handleAddMetricLog}
                     userProfile={userProfile}
                     setActiveTab={setActiveTab}
@@ -523,7 +569,7 @@ export function App() {
                 {activeTab === 'profile' && (
                   <UserProfileCenter
                     profile={userProfile}
-                    onUpdateProfile={setUserProfile}
+                    onUpdateProfile={handleUpdateProfile}
                     activeRole={activeRole}
                     onRoleChange={setActiveRole}
                     onAddVaultItem={handleAddVaultItem}
@@ -542,36 +588,45 @@ export function App() {
                 )}
               </>
             )}
-          </Suspense>
+            </Suspense>
+          </ErrorBoundary>
         </div>
 
       </main>
 
       {/* Modals wrapped in Suspense and conditionally rendered */}
-      <Suspense fallback={null}>
-        {isEmergencyOpen && (
-          <EmergencyHubModal
-            isOpen={isEmergencyOpen}
-            onClose={handleCloseEmergency}
-            userProfile={userProfile}
-          />
-        )}
-        {isAuthOpen && (
-          <AuthModal
-            isOpen={isAuthOpen}
-            onClose={handleCloseAuth}
-            userProfile={userProfile}
-            onLoginSuccess={(updated) => setUserProfile(updated)}
-          />
-        )}
-        {isOnboardingOpen && (
-          <OnboardingModal
-            isOpen={isOnboardingOpen}
-            onClose={handleCloseOnboarding}
-            onNavigateTab={(tab) => setActiveTab(tab)}
-          />
-        )}
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          {isEmergencyOpen && (
+            <EmergencyHubModal
+              isOpen={isEmergencyOpen}
+              onClose={handleCloseEmergency}
+              userProfile={userProfile}
+            />
+          )}
+          {isAuthOpen && (
+            <AuthModal
+              isOpen={isAuthOpen}
+              onClose={handleCloseAuth}
+              userProfile={userProfile}
+              onLoginSuccess={(updated) => setUserProfile(updated)}
+            />
+          )}
+          {isOnboardingOpen && (
+            <OnboardingModal
+              isOpen={isOnboardingOpen}
+              onClose={handleCloseOnboarding}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+            />
+          )}
+          {isPresentationOpen && (
+            <PresentationDeckModal
+              isOpen={isPresentationOpen}
+              onClose={() => setIsPresentationOpen(false)}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
 
       {/* Global Offline Banner & Queue Banner */}
       <OfflineNetworkBanner

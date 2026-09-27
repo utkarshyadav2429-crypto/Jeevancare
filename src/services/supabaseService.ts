@@ -867,6 +867,24 @@ export const supabaseVault = {
     }
   },
 
+  async createSignedDocumentUrl(filePath: string, expiresInSeconds: number = 3600): Promise<string | null> {
+    if (!isSupabaseConfigured) return filePath;
+    try {
+      if (filePath.startsWith('data:') || filePath.startsWith('blob:')) return filePath;
+      const cleanPath = filePath.includes(SUPABASE_STORAGE_BUCKETS.MEDICAL_DOCUMENTS + '/')
+        ? filePath.split(SUPABASE_STORAGE_BUCKETS.MEDICAL_DOCUMENTS + '/')[1]
+        : filePath;
+      const { data, error } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKETS.MEDICAL_DOCUMENTS)
+        .createSignedUrl(cleanPath, expiresInSeconds);
+      if (error) throw error;
+      return data.signedUrl;
+    } catch (err) {
+      console.warn('Failed to generate signed document URL:', err);
+      return null;
+    }
+  },
+
   async uploadDocumentToStorage(userId: string, file: File): Promise<string | null> {
     if (!isSupabaseConfigured) {
       // Create data URL fallback for local testing
@@ -885,12 +903,17 @@ export const supabaseVault = {
 
       if (error) throw error;
 
-      // Get public or signed URL
-      const { data: publicUrlData } = supabase.storage
+      // Private Medical Documents: Generate secure time-bound signed URL (60 mins)
+      const { data: signedData, error: signedError } = await supabase.storage
         .from(SUPABASE_STORAGE_BUCKETS.MEDICAL_DOCUMENTS)
-        .getPublicUrl(data.path);
+        .createSignedUrl(data.path, 3600);
 
-      return publicUrlData.publicUrl;
+      if (!signedError && signedData?.signedUrl) {
+        return signedData.signedUrl;
+      }
+
+      // Safe fallback to path
+      return data.path;
     } catch (err) {
       console.warn('Supabase Storage upload error:', err);
       return null;
@@ -1869,5 +1892,580 @@ export const supabaseAssistantMessages = {
     }
   },
 };
+
+// ============================================================================
+// 11. EMERGENCY CONTACTS SERVICES
+// ============================================================================
+
+export const supabaseEmergencyContacts = {
+  async fetchEmergencyContacts(userId: string) {
+    const cacheKey = getUserCacheKey('emergency_contacts', userId);
+    if (!isSupabaseConfigured) {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : [];
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('emergency_contacts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const contacts = data.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          relation: d.relation,
+          phone: d.phone,
+          isPrimary: d.is_primary ?? false,
+        }));
+        localStorage.setItem(cacheKey, JSON.stringify(contacts));
+        return contacts;
+      }
+      return [];
+    } catch (err) {
+      console.warn('Failed to fetch emergency contacts from Supabase:', err);
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : [];
+    }
+  },
+
+  async saveEmergencyContact(userId: string, contact: { name: string; relation: string; phone: string; isPrimary?: boolean }) {
+    const cacheKey = getUserCacheKey('emergency_contacts', userId);
+    const existing = await this.fetchEmergencyContacts(userId);
+    const newContact = { id: `ec_${Date.now()}`, ...contact };
+    localStorage.setItem(cacheKey, JSON.stringify([...existing, newContact]));
+
+    if (!isSupabaseConfigured) return newContact;
+
+    try {
+      const { data, error } = await supabase
+        .from('emergency_contacts')
+        .insert({
+          user_id: userId,
+          name: contact.name,
+          relation: contact.relation,
+          phone: contact.phone,
+          is_primary: contact.isPrimary ?? false,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.warn('Failed to save emergency contact to Supabase:', err);
+      return newContact;
+    }
+  },
+};
+
+// ============================================================================
+// 12. ECONOMIC PROFILES & AFFORDABILITY SERVICES
+// ============================================================================
+
+export const supabaseEconomicProfiles = {
+  async fetchEconomicProfile(userId: string) {
+    const cacheKey = `jeevancare_econ_profile_${userId}`;
+    if (!isSupabaseConfigured) {
+      const raw = localStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('economic_profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data) {
+        const mapped = {
+          id: data.id,
+          userId: data.user_id,
+          monthlyHouseholdIncome: Number(data.monthly_household_income || 0),
+          annualHouseholdIncome: Number(data.annual_household_income || 0),
+          incomeBracket: data.income_bracket,
+          familySize: data.family_size,
+          dependentsCount: data.dependents_count,
+          seniorDependentsCount: data.senior_dependents_count,
+          childDependentsCount: data.child_dependents_count,
+          occupationCategory: data.occupation_category,
+          rationCardType: data.ration_card_type,
+          areaType: data.area_type,
+          state: data.state,
+          district: data.district,
+          hasAyushmanCard: data.has_ayushman_card,
+          ayushmanCardNumber: data.ayushman_card_number,
+          hasStateHealthCard: data.has_state_health_card,
+          stateHealthCardName: data.state_health_card_name,
+          hasPrivateInsurance: data.has_private_insurance,
+          privateInsuranceSumInsured: Number(data.private_insurance_sum_insured || 0),
+          hasDisabilityOrSpecialCategory: data.has_disability_or_special_category,
+          specialCategoryNotes: data.special_category_notes,
+          consentGiven: data.consent_given,
+          consentGivenAt: data.consent_given_at,
+          lastUpdated: data.updated_at,
+        };
+        localStorage.setItem(cacheKey, JSON.stringify(mapped));
+        return mapped;
+      }
+      const raw = localStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch (err) {
+      console.warn('Failed to fetch economic profile from Supabase:', err);
+      const raw = localStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : null;
+    }
+  },
+
+  async saveEconomicProfile(profile: any) {
+    const cacheKey = `jeevancare_econ_profile_${profile.userId}`;
+    localStorage.setItem(cacheKey, JSON.stringify(profile));
+
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const dbRow = {
+        user_id: profile.userId,
+        monthly_household_income: profile.monthlyHouseholdIncome || 0,
+        annual_household_income: profile.annualHouseholdIncome || (profile.monthlyHouseholdIncome * 12) || 0,
+        income_bracket: profile.incomeBracket,
+        family_size: profile.familySize || 1,
+        dependents_count: profile.dependentsCount || 0,
+        senior_dependents_count: profile.seniorDependentsCount || 0,
+        child_dependents_count: profile.childDependentsCount || 0,
+        occupation_category: profile.occupationCategory,
+        ration_card_type: profile.rationCardType,
+        area_type: profile.areaType || 'Urban',
+        state: profile.state || 'Uttar Pradesh',
+        district: profile.district || 'Lucknow',
+        has_ayushman_card: profile.hasAyushmanCard ?? false,
+        ayushman_card_number: profile.ayushmanCardNumber || null,
+        has_state_health_card: profile.hasStateHealthCard ?? false,
+        state_health_card_name: profile.stateHealthCardName || null,
+        has_private_insurance: profile.hasPrivateInsurance ?? false,
+        private_insurance_sum_insured: profile.privateInsuranceSumInsured || 0,
+        has_disability_or_special_category: profile.hasDisabilityOrSpecialCategory ?? false,
+        special_category_notes: profile.specialCategoryNotes || null,
+        consent_given: profile.consentGiven ?? true,
+        consent_given_at: profile.consentGivenAt || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('economic_profiles')
+        .upsert(dbRow, { onConflict: 'user_id' });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to save economic profile to Supabase:', err);
+      return false;
+    }
+  },
+};
+
+// ============================================================================
+// 13. MEDICINE USAGE & ADHERENCE LOGS
+// ============================================================================
+
+export const supabaseMedicineLogs = {
+  async logDose(userId: string, activeMedicineId: string, status: 'taken' | 'missed' | 'skipped' | 'snoozed', notes?: string) {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const { error } = await supabase.from('medicine_usage_logs').insert({
+        active_medicine_id: activeMedicineId,
+        user_id: userId,
+        status,
+        notes: notes || null,
+        taken_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to log dose intake to Supabase:', err);
+      return false;
+    }
+  },
+};
+
+// ============================================================================
+// 14. VAULT SHARE LINKS
+// ============================================================================
+
+export const supabaseVaultShare = {
+  async createShareLink(vaultItemId: string, userId: string, hours = 48) {
+    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const expiresAt = new Date(Date.now() + hours * 3600000).toISOString();
+
+    if (!isSupabaseConfigured) {
+      return { token, url: `${window.location.origin}/#vault-share?token=${token}`, expiresAt };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('vault_share_links')
+        .insert({
+          vault_item_id: vaultItemId,
+          user_id: userId,
+          access_token: token,
+          expires_at: expiresAt,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return {
+        token: data.access_token,
+        url: `${window.location.origin}/#vault-share?token=${data.access_token}`,
+        expiresAt: data.expires_at,
+      };
+    } catch (err) {
+      console.warn('Failed to create vault share link in Supabase:', err);
+      return { token, url: `${window.location.origin}/#vault-share?token=${token}`, expiresAt };
+    }
+  },
+};
+
+// ============================================================================
+// 15. CLINICAL SOAP NOTES & CONSULTATION CHAT
+// ============================================================================
+
+export const supabaseClinicalNotes = {
+  async fetchNotesForPatient(patientId: string) {
+    if (!isSupabaseConfigured) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('clinical_notes')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.warn('Failed to fetch clinical notes:', err);
+      return [];
+    }
+  },
+
+  async saveClinicalNote(note: any) {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const { error } = await supabase.from('clinical_notes').insert({
+        appointment_id: note.appointmentId,
+        patient_id: note.patientId,
+        doctor_id: note.doctorId,
+        patient_name: note.patientName,
+        doctor_name: note.doctorName,
+        date: note.date || new Date().toISOString().split('T')[0],
+        note_type: note.type || 'SOAP Note',
+        subjective: note.subjective,
+        objective: note.objective,
+        assessment: note.assessment,
+        plan: note.plan,
+        vitals_snapshot: note.vitals || {},
+        doctor_signature: note.doctorSignature || 'Dr. Physician',
+        is_locked: true,
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to save clinical note in Supabase:', err);
+      return false;
+    }
+  },
+};
+
+// ============================================================================
+// 16. CONSULTATION MESSAGES
+// ============================================================================
+
+export const supabaseConsultationMessages = {
+  async fetchMessages(appointmentId: string) {
+    if (!isSupabaseConfigured) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('consultation_messages')
+        .select('*')
+        .eq('appointment_id', appointmentId)
+        .order('timestamp', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.warn('Failed to fetch consultation messages:', err);
+      return [];
+    }
+  },
+
+  async sendMessage(msg: { appointmentId: string; senderId: string; senderRole: 'doctor' | 'patient' | 'system'; text: string; attachmentUrl?: string }) {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const { error } = await supabase.from('consultation_messages').insert({
+        appointment_id: msg.appointmentId,
+        sender_id: msg.senderId,
+        sender_role: msg.senderRole,
+        text: msg.text,
+        attachment_url: msg.attachmentUrl || null,
+        timestamp: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to send consultation message:', err);
+      return false;
+    }
+  },
+};
+
+// ============================================================================
+// 17. AUDIT LOGS
+// ============================================================================
+
+export const supabaseAuditLogs = {
+  async recordLog(log: any) {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const { error } = await supabase.from('audit_logs').insert({
+        user_id_text: log.userId || null,
+        user_name: log.userName || null,
+        user_role: log.userRole || 'patient',
+        action: log.action,
+        details: log.details,
+        ip_address: log.ipAddress || '103.24.18.92 (India)',
+        status: log.status || 'SUCCESS',
+        timestamp: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      // Non-blocking
+      return false;
+    }
+  },
+
+  async fetchAuditLogs(limit = 100) {
+    if (!isSupabaseConfigured) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      return (data || []).map((d: any) => ({
+        id: d.id,
+        timestamp: new Date(d.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        userId: d.user_id_text || d.actor_id || 'system',
+        userName: d.user_name || 'User',
+        userRole: d.user_role || 'patient',
+        action: d.action,
+        details: d.details,
+        ipAddress: d.ip_address || '103.24.18.92 (India)',
+        status: d.status as 'SUCCESS' | 'WARNING' | 'DENIED',
+      }));
+    } catch (err) {
+      console.warn('Failed to fetch audit logs from Supabase:', err);
+      return [];
+    }
+  },
+};
+
+// ============================================================================
+// 18. MEDBUDDY ASSISTED COMPANION SERVICES
+// ============================================================================
+
+export const supabaseMedBuddy = {
+  async fetchBuddies() {
+    if (!isSupabaseConfigured) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from('medbuddy_profiles')
+        .select('*')
+        .order('rating', { ascending: false });
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        return data.map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          phone: b.phone,
+          email: b.email,
+          photo: b.photo,
+          gender: b.gender,
+          age: b.age,
+          rating: Number(b.rating),
+          reviewCount: b.review_count,
+          completedTrips: b.completed_trips,
+          verificationStatus: b.verification_status,
+          backgroundVerified: b.background_verified,
+          trainingCompleted: b.training_completed,
+          languages: b.languages || ['Hindi', 'English'],
+          serviceArea: b.service_area,
+          currentAvailability: b.current_availability,
+          currentCoordinates: b.current_lat && b.current_lng ? { lat: Number(b.current_lat), lng: Number(b.current_lng) } : undefined,
+          bio: b.bio,
+          experienceYears: b.experience_years,
+          joinedDate: b.created_at ? new Date(b.created_at).toLocaleDateString() : '01/08/2026',
+        }));
+      }
+      return null;
+    } catch (err) {
+      console.warn('Failed to fetch MedBuddies from Supabase:', err);
+      return null;
+    }
+  },
+
+  async fetchBookings(userId: string) {
+    if (!isSupabaseConfigured) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from('medbuddy_bookings')
+        .select('*')
+        .eq('patient_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data || null;
+    } catch (err) {
+      console.warn('Failed to fetch MedBuddy bookings from Supabase:', err);
+      return null;
+    }
+  },
+
+  async saveBooking(booking: any) {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const { error } = await supabase.from('medbuddy_bookings').insert({
+        id: booking.id,
+        patient_id: booking.patientId,
+        assigned_buddy_id: booking.assignedBuddyId || null,
+        patient_name: booking.patientName,
+        patient_phone: booking.patientPhone,
+        emergency_contact_name: booking.emergencyContactName || null,
+        emergency_contact_phone: booking.emergencyContactPhone || null,
+        is_for_self: booking.isForSelf ?? true,
+        patient_relationship: booking.patientRelationship || null,
+        patient_age: booking.patientAge || null,
+        reason_category: booking.reasonCategory,
+        custom_reason: booking.customReason || null,
+        emergency_screening_cleared: booking.emergencyScreeningCleared ?? true,
+        pickup_address: booking.pickupAddress,
+        pickup_lat: booking.pickupCoordinates.lat,
+        pickup_lng: booking.pickupCoordinates.lng,
+        destination_place_id: booking.destinationPlaceId || null,
+        destination_name: booking.destinationName,
+        destination_address: booking.destinationAddress,
+        destination_lat: booking.destinationCoordinates.lat,
+        destination_lng: booking.destinationCoordinates.lng,
+        destination_phone: booking.destinationPhone || null,
+        destination_maps_url: booking.destinationMapsUrl || null,
+        scheduled_at: booking.scheduledAt,
+        is_asap: booking.isAsap ?? false,
+        expected_hospital_duration: booking.expectedHospitalDuration || '1–2 hours',
+        estimated_total_duration_minutes: booking.estimatedTotalDurationMinutes || 120,
+        return_required: booking.returnRequired ?? true,
+        return_option: booking.returnOption || 'after_appointment',
+        requested_services: booking.requestedServices || [],
+        mobility_requirement: booking.mobilityRequirement || 'independent',
+        price_snapshot: booking.priceSnapshot,
+        status: booking.status || 'REQUESTED',
+        pickup_pin: booking.pickupPin,
+        cab_status: booking.cabStatus || 'CAB_REQUESTED',
+        payment_status: booking.paymentStatus || 'pending',
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to save MedBuddy booking to Supabase:', err);
+      return false;
+    }
+  },
+
+  async updateBookingStatus(bookingId: string, status: string, assignedBuddyId?: string | null): Promise<boolean> {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const payload: any = { status, updated_at: new Date().toISOString() };
+      if (assignedBuddyId !== undefined) {
+        payload.assigned_buddy_id = assignedBuddyId;
+      }
+      const { error } = await supabase
+        .from('medbuddy_bookings')
+        .update(payload)
+        .eq('id', bookingId);
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to update MedBuddy booking status in Supabase:', err);
+      return false;
+    }
+  },
+
+  async updateBookingTask(taskId: string, completed: boolean): Promise<boolean> {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const { error } = await supabase
+        .from('medbuddy_booking_tasks')
+        .update({ is_completed: completed, updated_at: new Date().toISOString() })
+        .eq('id', taskId);
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to update MedBuddy task in Supabase:', err);
+      return false;
+    }
+  },
+
+  async createBookingEvent(event: any): Promise<boolean> {
+    if (!isSupabaseConfigured) return true;
+
+    try {
+      const { error } = await supabase
+        .from('medbuddy_booking_events')
+        .insert({
+          id: event.id,
+          booking_id: event.bookingId,
+          event_type: event.eventType,
+          actor_id: event.actorId,
+          actor_role: event.actorRole,
+          timestamp: event.timestamp || new Date().toISOString(),
+          description: event.description,
+          metadata: event.metadata || {},
+        });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.warn('Failed to create MedBuddy event in Supabase:', err);
+      return false;
+    }
+  },
+};
+
 
 

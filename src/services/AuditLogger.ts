@@ -123,6 +123,12 @@ class AuditLoggerService {
 
     this.logs = [newLog, ...this.logs];
     this.saveLogs();
+
+    // Asynchronously dispatch to Supabase audit_logs table
+    import('./supabaseService').then(({ supabaseAuditLogs }) => {
+      supabaseAuditLogs.recordLog(newLog).catch(() => {});
+    }).catch(() => {});
+
     return newLog;
   }
 
@@ -137,3 +143,4 @@ class AuditLoggerService {
 }
 
 export const auditLogger = new AuditLoggerService();
+

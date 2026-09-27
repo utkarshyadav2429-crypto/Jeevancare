@@ -22,7 +22,8 @@ import {
   Laptop,
   FlaskConical,
   X,
-  HeartHandshake
+  HeartHandshake,
+  Presentation
 } from 'lucide-react';
 import { UserProfile, UserRole, AppNotification, RoleType } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -37,6 +38,7 @@ interface HeaderProps {
   onOpenAuth?: () => void;
   onOpenEmergency?: () => void;
   onOpenOnboarding?: () => void;
+  onOpenPresentation?: () => void;
   notifications?: AppNotification[];
   onOpenNotifications?: () => void;
   searchQuery?: string;
@@ -55,6 +57,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   onOpenAuth = () => {},
   onOpenEmergency = () => {},
   onOpenOnboarding = () => {},
+  onOpenPresentation,
   notifications = [],
   onOpenNotifications = () => {},
   searchQuery = '',
@@ -262,6 +265,19 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             <AlertTriangle className="w-3.5 h-3.5 fill-white text-rose-600" />
             <span>SOS</span>
           </button>
+
+          {/* 10-Slide Project Presentation Deck Button */}
+          {onOpenPresentation && (
+            <button
+              onClick={onOpenPresentation}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/60 dark:hover:bg-emerald-900 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700/80 transition-colors cursor-pointer shadow-2xs"
+              title="Open 10-Slide Project Presentation Deck"
+              aria-label="Open 10-Slide Project Presentation Deck"
+            >
+              <Presentation className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+              <span className="hidden sm:inline">Deck (10 Slides)</span>
+            </button>
+          )}
 
           {/* Help & Feature Guide Button */}
           <button

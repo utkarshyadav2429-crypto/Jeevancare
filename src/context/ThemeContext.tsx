@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   SolarScheduleResult,
   getActiveSchedule,
@@ -47,7 +47,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved === 'light' || saved === 'dark' || saved === 'system' || saved === 'auto') {
-        return saved;
+        return saved as ThemeMode;
       }
     } catch (e) {
       console.warn('LocalStorage error reading theme:', e);
@@ -59,6 +59,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(
     () => getStoredCoordinates()
   );
+  const coordinatesRef = useRef(coordinates);
+  coordinatesRef.current = coordinates;
 
   // 3. Solar & system-clock schedule evaluation
   const [solarInfo, setSolarInfo] = useState<SolarScheduleResult>(() =>
@@ -72,7 +74,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved === 'dark') return 'dark';
       if (saved === 'light') return 'light';
-      // System or auto: compute based on solar or day/night schedule
       const sched = getActiveSchedule(getStoredCoordinates());
       return sched.isDaytime ? 'light' : 'dark';
     } catch {
@@ -81,31 +82,46 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const isMountedRef = useRef(true);
-  const useIsomorphicEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   // Recalculates the day/night schedule and returns the latest SolarScheduleResult
   const evaluateSchedule = useCallback((): SolarScheduleResult => {
-    const coords = coordinates || getStoredCoordinates();
+    const coords = coordinatesRef.current || getStoredCoordinates();
     const result = getActiveSchedule(coords, new Date());
-    setSolarInfo(result);
+    setSolarInfo((prev) => {
+      if (
+        prev &&
+        prev.isDaytime === result.isDaytime &&
+        prev.sunriseTime === result.sunriseTime &&
+        prev.sunsetTime === result.sunsetTime
+      ) {
+        return prev;
+      }
+      return result;
+    });
     return result;
-  }, [coordinates]);
+  }, []);
+
+  const evaluateScheduleRef = useRef(evaluateSchedule);
+  evaluateScheduleRef.current = evaluateSchedule;
 
   // Apply the effective theme classes to DOM documentElement
   const applyTheme = useCallback(() => {
     if (typeof document === 'undefined') return;
     const root = document.documentElement;
+    const currentTheme = themeRef.current;
 
     let active: 'light' | 'dark' = 'light';
 
-    if (theme === 'system' || theme === 'auto') {
-      const schedule = evaluateSchedule();
+    if (currentTheme === 'system' || currentTheme === 'auto') {
+      const schedule = evaluateScheduleRef.current();
       active = schedule.isDaytime ? 'light' : 'dark';
     } else {
-      active = theme;
+      active = currentTheme;
     }
 
-    setResolvedTheme(active);
+    setResolvedTheme((prev) => (prev === active ? prev : active));
 
     if (active === 'dark') {
       root.classList.add('dark');
@@ -116,31 +132,33 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.setAttribute('data-theme', 'light');
       root.style.colorScheme = 'light';
     }
-  }, [theme, evaluateSchedule]);
+  }, []);
+
+  const applyThemeRef = useRef(applyTheme);
+  applyThemeRef.current = applyTheme;
 
   // Synchronous initial apply & when theme mode changes
-  useIsomorphicEffect(() => {
+  useEffect(() => {
     applyTheme();
-  }, [applyTheme]);
+  }, [theme, applyTheme]);
 
-  // Periodic check & auto-toggle (every 30 seconds) + page visibility change + window focus
+  // Periodic check & auto-toggle + page visibility change + window focus + storage sync
   useEffect(() => {
     isMountedRef.current = true;
 
     const checkAndToggle = () => {
       if (!isMountedRef.current) return;
-      if (theme === 'system' || theme === 'auto') {
-        applyTheme();
+      if (themeRef.current === 'system' || themeRef.current === 'auto') {
+        applyThemeRef.current();
       } else {
-        // Still keep solarInfo fresh for UI tooltips and status indicators
-        evaluateSchedule();
+        evaluateScheduleRef.current();
       }
     };
 
-    // Auto-toggle check interval
+    // Auto-toggle check interval (every 30 seconds)
     const timer = setInterval(checkAndToggle, 30000);
 
-    // Visibility change check (e.g. user resumes laptop or opens tab after sleep)
+    // Visibility change check
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         checkAndToggle();
@@ -155,11 +173,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         typeof customEvent.detail.latitude === 'number' &&
         typeof customEvent.detail.longitude === 'number'
       ) {
-        setCoordinates({
-          latitude: customEvent.detail.latitude,
-          longitude: customEvent.detail.longitude,
+        const { latitude, longitude } = customEvent.detail;
+        setCoordinates((prev) => {
+          if (
+            prev &&
+            Math.abs(prev.latitude - latitude) < 0.0001 &&
+            Math.abs(prev.longitude - longitude) < 0.0001
+          ) {
+            return prev;
+          }
+          return { latitude, longitude };
         });
-        if (theme === 'system' || theme === 'auto') {
+        if (themeRef.current === 'system' || themeRef.current === 'auto') {
           setTimeout(checkAndToggle, 0);
         }
       }
@@ -169,14 +194,24 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY && e.newValue) {
         if (e.newValue === 'light' || e.newValue === 'dark' || e.newValue === 'system' || e.newValue === 'auto') {
-          setThemeState(e.newValue);
+          setThemeState(e.newValue as ThemeMode);
         }
       }
       if (e.key === COORDS_KEY && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
           if (typeof parsed?.latitude === 'number' && typeof parsed?.longitude === 'number') {
-            setCoordinates({ latitude: parsed.latitude, longitude: parsed.longitude });
+            const { latitude, longitude } = parsed;
+            setCoordinates((prev) => {
+              if (
+                prev &&
+                Math.abs(prev.latitude - latitude) < 0.0001 &&
+                Math.abs(prev.longitude - longitude) < 0.0001
+              ) {
+                return prev;
+              }
+              return { latitude, longitude };
+            });
           }
         } catch {
           // ignore
@@ -184,7 +219,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     };
 
-    // Passive geolocation detection if browser permission was already granted
+    // Passive geolocation detection if browser permission was already granted (run once)
     if (typeof navigator !== 'undefined' && 'permissions' in navigator && navigator.permissions?.query) {
       navigator.permissions
         .query({ name: 'geolocation' })
@@ -193,15 +228,24 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             navigator.geolocation.getCurrentPosition(
               (pos) => {
                 if (!isMountedRef.current) return;
-                const coords = {
+                const newCoords = {
                   latitude: pos.coords.latitude,
                   longitude: pos.coords.longitude,
                 };
-                setCoordinates(coords);
+                setCoordinates((prev) => {
+                  if (
+                    prev &&
+                    Math.abs(prev.latitude - newCoords.latitude) < 0.0001 &&
+                    Math.abs(prev.longitude - newCoords.longitude) < 0.0001
+                  ) {
+                    return prev;
+                  }
+                  return newCoords;
+                });
                 try {
                   localStorage.setItem(
                     COORDS_KEY,
-                    JSON.stringify({ ...coords, timestamp: Date.now() })
+                    JSON.stringify({ ...newCoords, timestamp: Date.now() })
                   );
                 } catch {
                   // ignore
@@ -228,7 +272,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       window.removeEventListener('jevan_location_updated', handleLocationUpdated);
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [theme, applyTheme, evaluateSchedule]);
+  }, []);
 
   const setTheme = useCallback((newTheme: ThemeMode) => {
     setThemeState(newTheme);
@@ -240,31 +284,38 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const toggleTheme = useCallback(() => {
-    if (resolvedTheme === 'light') {
-      setTheme('dark');
-    } else {
-      setTheme('light');
-    }
-  }, [resolvedTheme, setTheme]);
+    setThemeState((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch (e) {
+        console.warn('LocalStorage error toggling theme:', e);
+      }
+      return next;
+    });
+  }, []);
 
   const refreshSchedule = useCallback(() => {
     evaluateSchedule();
-    if (theme === 'system' || theme === 'auto') {
+    if (themeRef.current === 'system' || themeRef.current === 'auto') {
       applyTheme();
     }
-  }, [evaluateSchedule, theme, applyTheme]);
+  }, [evaluateSchedule, applyTheme]);
+
+  const contextValue = useMemo(
+    () => ({
+      theme,
+      resolvedTheme,
+      solarInfo,
+      setTheme,
+      toggleTheme,
+      refreshSchedule,
+    }),
+    [theme, resolvedTheme, solarInfo, setTheme, toggleTheme, refreshSchedule]
+  );
 
   return (
-    <ThemeContext.Provider
-      value={{
-        theme,
-        resolvedTheme,
-        solarInfo,
-        setTheme,
-        toggleTheme,
-        refreshSchedule,
-      }}
-    >
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );

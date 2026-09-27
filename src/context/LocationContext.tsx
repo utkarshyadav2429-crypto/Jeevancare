@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useCallback,
   useRef,
+  useMemo,
   ReactNode,
 } from 'react';
 import {
@@ -291,26 +292,46 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const isLoading = status === 'requesting' || status === 'acquiring';
 
-  const contextValue: LocationContextType = {
-    location,
-    status,
-    statusMessage,
-    permissionState,
-    accuracy: location ? location.accuracy : null,
-    accuracyQuality,
-    formattedCoords,
-    lastUpdatedTime,
-    addressLabel,
-    isLoading,
-    isWatching,
-    locationAgeSeconds,
-    isStale: location ? isLocationStale(location.timestamp) : false,
-    refreshLocation,
-    startWatching,
-    stopWatching,
-    setManualLocation,
-    clearLocation,
-  };
+  const contextValue: LocationContextType = useMemo(
+    () => ({
+      location,
+      status,
+      statusMessage,
+      permissionState,
+      accuracy: location ? location.accuracy : null,
+      accuracyQuality,
+      formattedCoords,
+      lastUpdatedTime,
+      addressLabel,
+      isLoading,
+      isWatching,
+      locationAgeSeconds,
+      isStale: location ? isLocationStale(location.timestamp) : false,
+      refreshLocation,
+      startWatching,
+      stopWatching,
+      setManualLocation,
+      clearLocation,
+    }),
+    [
+      location,
+      status,
+      statusMessage,
+      permissionState,
+      accuracyQuality,
+      formattedCoords,
+      lastUpdatedTime,
+      addressLabel,
+      isLoading,
+      isWatching,
+      locationAgeSeconds,
+      refreshLocation,
+      startWatching,
+      stopWatching,
+      setManualLocation,
+      clearLocation,
+    ]
+  );
 
   return <LocationContext.Provider value={contextValue}>{children}</LocationContext.Provider>;
 };

@@ -1,6 +1,6 @@
 # Data Flow & Privacy Lifecycle — JeevanCare v1.0.0
 
-This document outlines how clinical and personal data flows across JeevanCare.
+This document outlines how clinical and personal data flows across JeevanCare. For complete end-to-end user journeys, sequence diagrams, and subsystem state transitions, refer to [Application Workflow Specification](./APPLICATION_WORKFLOW.md).
 
 ---
 

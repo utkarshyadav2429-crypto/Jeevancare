@@ -37,8 +37,12 @@ export const LifestyleAndHomeCare: React.FC<LifestyleAndHomeCareProps> = ({
 
   // Breathing Exercise State
   const [isBreathingActive, setIsBreathingActive] = useState(false);
-  const [breathPhase, setBreathPhase] = useState<'Inhale' | 'Hold' | 'Exhale'>('Inhale');
-  const [breathSeconds, setBreathSeconds] = useState(4);
+  const [breathState, setBreathState] = useState<{ phase: 'Inhale' | 'Hold' | 'Exhale'; seconds: number }>({
+    phase: 'Inhale',
+    seconds: 4,
+  });
+  const breathPhase = breathState.phase;
+  const breathSeconds = breathState.seconds;
 
   // Journaling state
   const [journalEntry, setJournalEntry] = useState('');
@@ -47,30 +51,25 @@ export const LifestyleAndHomeCare: React.FC<LifestyleAndHomeCareProps> = ({
   ]);
 
   useEffect(() => {
-    let interval: any = null;
-    if (isBreathingActive) {
-      interval = setInterval(() => {
-        setBreathSeconds((prev) => {
-          if (prev <= 1) {
-            if (breathPhase === 'Inhale') {
-              setBreathPhase('Hold');
-              return 7;
-            } else if (breathPhase === 'Hold') {
-              setBreathPhase('Exhale');
-              return 8;
-            } else {
-              setBreathPhase('Inhale');
-              return 4;
-            }
+    if (!isBreathingActive) return;
+
+    const interval = setInterval(() => {
+      setBreathState((prev) => {
+        if (prev.seconds <= 1) {
+          if (prev.phase === 'Inhale') {
+            return { phase: 'Hold', seconds: 7 };
+          } else if (prev.phase === 'Hold') {
+            return { phase: 'Exhale', seconds: 8 };
+          } else {
+            return { phase: 'Inhale', seconds: 4 };
           }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      clearInterval(interval);
-    }
+        }
+        return { ...prev, seconds: prev.seconds - 1 };
+      });
+    }, 1000);
+
     return () => clearInterval(interval);
-  }, [isBreathingActive, breathPhase]);
+  }, [isBreathingActive]);
 
   const handleSaveJournal = (e: React.FormEvent) => {
     e.preventDefault();

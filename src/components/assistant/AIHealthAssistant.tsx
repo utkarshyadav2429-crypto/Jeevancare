@@ -1092,3 +1092,5 @@ export const AIHealthAssistant: React.FC<AIHealthAssistantProps> = ({
     </div>
   );
 };
+
+export default AIHealthAssistant;

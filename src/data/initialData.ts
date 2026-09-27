@@ -683,6 +683,71 @@ export const initialNotifications: AppNotification[] = [
 
 export const sampleHealthMetrics: HealthMetricLog[] = [
   {
+    id: 'm_sep_25',
+    timestamp: '2026-09-25',
+    systolicBp: 117,
+    diastolicBp: 75,
+    bloodSugar: 98,
+    weight: 67.8,
+    temperature: 98.4,
+    sleepHours: 8.0,
+    mood: 'Great',
+    painLevel: 0,
+    symptoms: []
+  },
+  {
+    id: 'm_sep_22',
+    timestamp: '2026-09-22',
+    systolicBp: 118,
+    diastolicBp: 76,
+    bloodSugar: 101,
+    weight: 68.0,
+    temperature: 98.5,
+    sleepHours: 7.8,
+    mood: 'Great',
+    painLevel: 0,
+    symptoms: []
+  },
+  {
+    id: 'm_sep_18',
+    timestamp: '2026-09-18',
+    systolicBp: 119,
+    diastolicBp: 77,
+    bloodSugar: 103,
+    weight: 68.1,
+    temperature: 98.4,
+    sleepHours: 7.5,
+    mood: 'Good',
+    painLevel: 1,
+    symptoms: ['Mild post-workout soreness']
+  },
+  {
+    id: 'm_sep_12',
+    timestamp: '2026-09-12',
+    systolicBp: 120,
+    diastolicBp: 78,
+    bloodSugar: 104,
+    weight: 68.3,
+    temperature: 98.6,
+    sleepHours: 7.4,
+    mood: 'Good',
+    painLevel: 1,
+    symptoms: []
+  },
+  {
+    id: 'm_sep_04',
+    timestamp: '2026-09-04',
+    systolicBp: 121,
+    diastolicBp: 78,
+    bloodSugar: 105,
+    weight: 68.4,
+    temperature: 98.5,
+    sleepHours: 7.3,
+    mood: 'Good',
+    painLevel: 1,
+    symptoms: []
+  },
+  {
     id: 'm_1',
     timestamp: '2026-08-08',
     systolicBp: 118,

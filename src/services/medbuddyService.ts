@@ -14,6 +14,7 @@ import {
 } from './locationService';
 import { auditLogger } from './AuditLogger';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabaseMedBuddy } from './supabaseService';
 
 const STORAGE_KEYS = {
   BOOKINGS: 'jeevancare_medbuddy_bookings_db',
@@ -51,6 +52,18 @@ export const medbuddyService = {
    * Fetch all registered MedBuddy profiles (Admin & Matching)
    */
   async getBuddies(): Promise<MedBuddyProfile[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const dbBuddies = await supabaseMedBuddy.fetchBuddies();
+        if (dbBuddies && dbBuddies.length > 0) {
+          this.saveBuddies(dbBuddies as any);
+          return dbBuddies as any;
+        }
+      } catch {
+        // Fallback to local
+      }
+    }
+
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.BUDDIES);
       if (raw) {
@@ -370,6 +383,12 @@ export const medbuddyService = {
     const bookings = await this.getBookings();
     this.saveBookings([newBooking, ...bookings]);
 
+    if (isSupabaseConfigured) {
+      supabaseMedBuddy.saveBooking(newBooking).catch((err) =>
+        console.warn('[MedBuddy] Supabase save error:', err)
+      );
+    }
+
     auditLogger.logAction(
       'MEDBUDDY_BOOKING_CREATED',
       `Booking ${bookingId} confirmed for patient ${params.patientName}`,
@@ -444,6 +463,11 @@ export const medbuddyService = {
 
     const bookings = await this.getBookings();
     this.saveBookings(bookings.map((b) => (b.id === bookingId ? updatedBooking : b)));
+
+    if (isSupabaseConfigured) {
+      supabaseMedBuddy.updateBookingStatus(bookingId, 'BUDDY_ASSIGNED', buddy.id).catch(() => {});
+      supabaseMedBuddy.createBookingEvent(event).catch(() => {});
+    }
 
     auditLogger.logAction(
       'MEDBUDDY_ASSIGNED',
@@ -528,6 +552,11 @@ export const medbuddyService = {
 
     const bookings = await this.getBookings();
     this.saveBookings(bookings.map((b) => (b.id === bookingId ? updatedBooking : b)));
+
+    if (isSupabaseConfigured) {
+      supabaseMedBuddy.updateBookingStatus(bookingId, newStatus).catch(() => {});
+      supabaseMedBuddy.createBookingEvent(event).catch(() => {});
+    }
 
     auditLogger.logAction(
       'MEDBUDDY_STATUS_TRANSITION',

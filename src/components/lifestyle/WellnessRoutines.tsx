@@ -276,19 +276,23 @@ export const WellnessRoutines: React.FC = () => {
   };
 
   React.useEffect(() => {
-    let timer: any = null;
-    if (isTimerRunning && timerSeconds > 0) {
-      timer = setInterval(() => {
-        setTimerSeconds(prev => prev - 1);
-      }, 1000);
-    } else if (timerSeconds === 0 && isTimerRunning) {
-      setIsTimerRunning(false);
-      if (activeRoutine) {
-        toggleComplete(activeRoutine.id);
-      }
-    }
+    if (!isTimerRunning) return;
+
+    const timer = setInterval(() => {
+      setTimerSeconds((prev) => {
+        if (prev <= 1) {
+          setIsTimerRunning(false);
+          if (activeRoutine) {
+            toggleComplete(activeRoutine.id);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
     return () => clearInterval(timer);
-  }, [isTimerRunning, timerSeconds, activeRoutine]);
+  }, [isTimerRunning, activeRoutine]);
 
   const formatTimer = (totalSecs: number) => {
     const mins = Math.floor(totalSecs / 60);

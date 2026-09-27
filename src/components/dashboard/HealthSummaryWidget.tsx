@@ -435,6 +435,13 @@ export const HealthSummaryWidget: React.FC<HealthSummaryWidgetProps> = ({
     };
   }, [sevenDayData]);
 
+  const sevenDayDataRef = useRef(sevenDayData);
+  sevenDayDataRef.current = sevenDayData;
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+
   // 3. Gemini AI Predictive Trend & Wellness Suggestion Engine
   const fetchPredictiveTrend = React.useCallback(async () => {
     setIsAnalyzingTrend(true);
@@ -444,9 +451,9 @@ export const HealthSummaryWidget: React.FC<HealthSummaryWidgetProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sevenDayMetrics: sevenDayData,
-          stats,
-          userProfile: profile,
+          sevenDayMetrics: sevenDayDataRef.current,
+          stats: statsRef.current,
+          userProfile: profileRef.current,
         }),
       });
 
@@ -459,20 +466,21 @@ export const HealthSummaryWidget: React.FC<HealthSummaryWidgetProps> = ({
       }
     } catch (err: any) {
       console.warn('Predictive trend API fallback triggered:', err);
-      const projectedSys = Math.max(112, Math.round(stats.avgSys + (stats.sysTrend < 0 ? -2 : 1)));
-      const projectedDia = Math.max(72, Math.round(stats.avgDia + (stats.sysTrend < 0 ? -1 : 1)));
-      const projectedSugar = Math.max(88, Math.round(stats.avgSugar - 2));
+      const currStats = statsRef.current;
+      const projectedSys = Math.max(112, Math.round(currStats.avgSys + (currStats.sysTrend < 0 ? -2 : 1)));
+      const projectedDia = Math.max(72, Math.round(currStats.avgDia + (currStats.sysTrend < 0 ? -1 : 1)));
+      const projectedSugar = Math.max(88, Math.round(currStats.avgSugar - 2));
 
       setPredictiveData({
         predictiveHeadline: `Favorable Cardiovascular Trajectory: Projected ~${projectedSys}/${projectedDia} mmHg over next 3 days`,
-        projectedTrend: stats.sysTrend <= 0 ? 'improving' : 'stable',
+        projectedTrend: currStats.sysTrend <= 0 ? 'improving' : 'stable',
         confidenceScore: 92,
-        conciseSuggestion: `Your systolic blood pressure has reduced by ${Math.abs(Math.round(stats.sysTrend))} mmHg this week alongside consistent ${stats.avgSleep}h nightly rest. Maintain 2.5L daily hydration and keep dietary sodium moderate to sustain this recovery momentum.`,
+        conciseSuggestion: `Your systolic blood pressure has reduced by ${Math.abs(Math.round(currStats.sysTrend))} mmHg this week alongside consistent ${currStats.avgSleep}h nightly rest. Maintain 2.5L daily hydration and keep dietary sodium moderate to sustain this recovery momentum.`,
         keyDriver: 'Circadian Sleep Regularity & Hydration Balance',
         forecastVitals: {
           predictedBp: `${projectedSys}/${projectedDia} mmHg`,
           predictedSugar: `${projectedSugar} mg/dL`,
-          predictedSleep: `${stats.avgSleep} hrs/night`,
+          predictedSleep: `${currStats.avgSleep} hrs/night`,
           targetFocus: 'Keep dietary sodium < 2,000 mg/day & bedtime steady',
         },
         actionItem: 'Take a 15-minute relaxed post-dinner stroll to promote nocturnal endothelial recovery',
@@ -481,10 +489,14 @@ export const HealthSummaryWidget: React.FC<HealthSummaryWidgetProps> = ({
     } finally {
       setIsAnalyzingTrend(false);
     }
-  }, [sevenDayData, stats, profile]);
+  }, []);
 
+  const hasFetchedRef = useRef(false);
   useEffect(() => {
-    fetchPredictiveTrend();
+    if (!hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchPredictiveTrend();
+    }
   }, [fetchPredictiveTrend]);
 
   // Chart styling constants

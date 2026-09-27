@@ -111,10 +111,8 @@ export const DailyWellnessWisdom: React.FC<DailyWellnessWisdomProps> = React.mem
     const handleOnline = () => {
       if (isMountedRef.current) {
         setIsOnline(true);
-        if (uiState === 'offline') {
-          setUiState('idle');
-          setErrorMessage(null);
-        }
+        setUiState((prev) => (prev === 'offline' ? 'idle' : prev));
+        setErrorMessage(null);
       }
     };
 
@@ -136,7 +134,7 @@ export const DailyWellnessWisdom: React.FC<DailyWellnessWisdomProps> = React.mem
       if (rateLimitTimerRef.current) clearTimeout(rateLimitTimerRef.current);
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [uiState]);
+  }, []);
 
   // Analyze user metrics to derive relevant wellness category
   const analyzeUserMetrics = useCallback((): { primaryCategory: WisdomCategory; rationale: string } => {
